@@ -1466,6 +1466,7 @@ def api_punch_req_delete(rid):
 
 CUSTOM_RICHMENU_IMAGE_PATH = '/tmp/custom_richmenu.png'
 _pending_line_punches = {}   # {line_user_id: punch_type}
+_reply_token_map = {}        # {line_user_id: reply_token} — consumed on first use
 
 
 def get_line_punch_config():
@@ -1483,11 +1484,14 @@ def _send_line_punch(user_id, text):
     if not cfg or not cfg.get('enabled') or not cfg.get('channel_access_token'):
         return
     try:
-        LineBotApi(cfg['channel_access_token']).push_message(
-            user_id, TextSendMessage(text=text)
-        )
+        api = LineBotApi(cfg['channel_access_token'])
+        token = _reply_token_map.pop(user_id, None)
+        if token:
+            api.reply_message(token, TextSendMessage(text=text))
+        else:
+            api.push_message(user_id, TextSendMessage(text=text))
     except Exception as e:
-        print(f"[LINE PUNCH] push_message error: {e}")
+        print(f"[LINE PUNCH] send_message error: {e}")
 
 
 def _send_line_with_quick_reply(user_id, text, items):
@@ -1504,9 +1508,14 @@ def _send_line_with_quick_reply(user_id, text, items):
     ]
     msg = TextSendMessage(text=text, quick_reply=QuickReply(items=qr_items))
     try:
-        LineBotApi(cfg['channel_access_token']).push_message(user_id, msg)
+        api = LineBotApi(cfg['channel_access_token'])
+        token = _reply_token_map.pop(user_id, None)
+        if token:
+            api.reply_message(token, msg)
+        else:
+            api.push_message(user_id, msg)
     except Exception as e:
-        print(f"[LINE PUNCH] push_message (qr) error: {e}")
+        print(f"[LINE PUNCH] send_message (qr) error: {e}")
 
 
 @app.route('/line-punch/webhook', methods=['POST'])
@@ -1540,6 +1549,10 @@ def _handle_line_punch_event(event, cfg):
     user_id  = source.get('userId')
     evt_type = event.get('type')
     if not user_id: return
+
+    reply_token = event.get('replyToken')
+    if reply_token:
+        _reply_token_map[user_id] = reply_token
 
     msg      = event.get('message', {})
     msg_type = msg.get('type', '')
@@ -1643,7 +1656,12 @@ def _handle_line_punch_event(event, cfg):
                         text=f'請傳送您的位置來完成{PUNCH_LABEL[punch_type]}\n點下方「傳送位置」按鈕即可打卡',
                         quick_reply=qr)
                     try:
-                        LineBotApi(cfg_lp['channel_access_token']).push_message(user_id, msg)
+                        api = LineBotApi(cfg_lp['channel_access_token'])
+                        token = _reply_token_map.pop(user_id, None)
+                        if token:
+                            api.reply_message(token, msg)
+                        else:
+                            api.push_message(user_id, msg)
                     except Exception as _e:
                         print(f"[LINE PUNCH] location qr error: {_e}")
                 _pending_line_punches[user_id] = punch_type
