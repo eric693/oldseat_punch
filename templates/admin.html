@@ -5730,6 +5730,7 @@ async function openSalDetail(id) {
       <div><span style="color:var(--muted)">姓名：</span><strong>${escHtml(data.staff_name)}</strong></div>
       <div><span style="color:var(--muted)">部門：</span><strong>${escHtml(data.department||'—')}</strong></div>
       <div><span style="color:var(--muted)">月份：</span><strong>${month}</strong></div>
+      <div><span style="color:var(--muted)">發薪日：</span><strong>${data.pay_date||'—'}</strong></div>
     </div>
     ${leaveInfo}
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;padding:12px;background:#fff;border-radius:8px;border:1px solid var(--border)">

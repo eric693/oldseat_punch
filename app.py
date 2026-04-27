@@ -5494,8 +5494,8 @@ def api_export_salary():
     ca = Alignment(horizontal='center', vertical='center')
     headers = ['員工代碼','姓名','部門','職稱','薪資制度',
                '工作日','出勤天數','請假天數','無薪假天數',
-               '津貼合計','扣除合計','加班費','實領金額','狀態','備註']
-    col_w = [10,10,10,12,8,8,8,8,8,10,10,10,12,8,16]
+               '津貼合計','扣除合計','加班費','實領金額','發薪日','狀態','備註']
+    col_w = [10,10,10,12,8,8,8,8,8,10,10,10,12,12,8,16]
     for ci, (h, w) in enumerate(zip(headers, col_w), 1):
         cell = ws.cell(row=1, column=ci, value=h)
         cell.font = Font(bold=True, color='FFFFFF', name='Noto Sans TC', size=11)
@@ -5505,13 +5505,14 @@ def api_export_salary():
     ws.freeze_panes = 'A2'
     for ri, r in enumerate(rows, 2):
         sal_type = r['salary_type'] or 'monthly'
+        pay_date_val = r['pay_date'].isoformat() if r['pay_date'] else ''
         vals = [r['employee_code'] or '', r['staff_name'], r['department'] or '', r['role'] or '',
                 '時薪制' if sal_type == 'hourly' else '月薪制',
                 float(r['work_days'] or 0), float(r['actual_days'] or 0),
                 float(r['leave_days'] or 0), float(r['unpaid_days'] or 0),
                 float(r['allowance_total'] or 0), float(r['deduction_total'] or 0),
                 float(r['ot_pay'] or 0), float(r['net_pay'] or 0),
-                '已確認' if r['status'] == 'confirmed' else '草稿', r['note'] or '']
+                pay_date_val, '已確認' if r['status'] == 'confirmed' else '草稿', r['note'] or '']
         for ci2, v in enumerate(vals, 1):
             cell = ws.cell(row=ri, column=ci2, value=v)
             cell.alignment = ca; cell.border = thin
@@ -7096,6 +7097,7 @@ def api_salary_pdf(rid):
     <div><strong>{esc_h(row['staff_name'])}</strong></div>
     <div>{esc_h(row['employee_code'] or '')}　{esc_h(row['department'] or '')}　{esc_h(row['role'] or '')}</div>
     <div>到職日：{esc_h(str(row['hire_date']) if row['hire_date'] else '—')}</div>
+    <div>發薪日：<strong>{esc_h(str(d.get('pay_date','')) or '—')}</strong></div>
     <div>狀態：<strong>{status_str}</strong></div>
   </div>
 </div>
