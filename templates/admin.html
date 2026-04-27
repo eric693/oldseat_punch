@@ -996,7 +996,7 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
       <div class="card">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>代碼</th><th>姓名</th><th>部門</th><th>出勤</th><th>津貼合計</th><th>扣除合計</th><th>實領金額</th><th>狀態</th><th>操作</th></tr></thead>
+            <thead><tr><th>代碼</th><th>姓名</th><th>部門</th><th>出勤</th><th>津貼合計</th><th>扣除合計</th><th>實領金額</th><th>發薪日</th><th>狀態</th><th>操作</th></tr></thead>
             <tbody id="sal-tbody"></tbody>
           </table>
         </div>
@@ -1013,6 +1013,23 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
 
     <!-- 薪資設定 -->
     <div id="salary-panel-settings" style="display:none">
+      <!-- 結算與發薪設定 -->
+      <div class="card" style="padding:20px;margin-bottom:20px">
+        <div class="card-title" style="padding:0;margin-bottom:14px">結算與發薪設定</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:440px">
+          <div>
+            <label class="form-label">結算日（每月幾日自動結算上月薪資）</label>
+            <input type="number" class="form-input" id="sal-settlement-day" min="1" max="28" style="width:100%" placeholder="1">
+          </div>
+          <div>
+            <label class="form-label">發薪日（每月幾日發薪）</label>
+            <input type="number" class="form-input" id="sal-pay-day" min="1" max="28" style="width:100%" placeholder="5">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:8px">※ 限 1–28 日，避免月底日期不存在的問題。排程每日 02:00 自動檢查，到達結算日時產生上月薪資草稿。</div>
+        <button class="btn btn-primary" style="margin-top:12px" onclick="saveSalaryConfig()">儲存設定</button>
+        <span id="sal-config-msg" style="font-size:12px;color:var(--green);margin-left:12px"></span>
+      </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
         <span id="sal-staff-count" style="font-size:13px;color:var(--muted)"></span>
         <a href="#" onclick="showPage('punch',event);switchPunchTab('staff')" style="font-size:12px;color:var(--accent)">管理員工 →</a>
@@ -5550,10 +5567,28 @@ function switchSalaryTab(tab) {
     document.getElementById('salary-panel-'+t).style.display=t===tab?'':'none';
   });
   if (tab==='calc')        loadSalaryRecords();
-  if (tab==='settings')    { loadSalaryStaff(); loadSalaryItems(); }
+  if (tab==='settings')    { loadSalaryStaff(); loadSalaryItems(); loadSalaryConfig(); }
   if (tab==='items')       loadSalaryItems();
   if (tab==='withholding') initWithholdingTab();
   if (tab==='edi')         initEdiTab();
+}
+
+// ── 結算設定 ─────────────────────────────────────────────────
+async function loadSalaryConfig() {
+  const {ok,data} = await api('/api/salary/config',{},true);
+  if (!ok) return;
+  document.getElementById('sal-settlement-day').value = data.settlement_day;
+  document.getElementById('sal-pay-day').value = data.pay_day;
+}
+
+async function saveSalaryConfig() {
+  const settlement_day = parseInt(document.getElementById('sal-settlement-day').value)||1;
+  const pay_day = parseInt(document.getElementById('sal-pay-day').value)||5;
+  const {ok} = await api('/api/salary/config', apiPUT({settlement_day, pay_day}));
+  if (!ok) return;
+  const msg = document.getElementById('sal-config-msg');
+  msg.textContent = '已儲存';
+  setTimeout(()=>{ msg.textContent=''; }, 2000);
 }
 
 // ── 月薪計算 ─────────────────────────────────────────────────
@@ -5564,7 +5599,7 @@ async function loadSalaryRecords() {
   document.getElementById('sal-count').textContent=`共 ${salaryRecords.length} 筆 | 已確認 ${salaryRecords.filter(r=>r.status==='confirmed').length} 筆`;
   const tb = document.getElementById('sal-tbody');
   if (!salaryRecords.length) {
-    tb.innerHTML='<tr><td colspan="8" class="empty-state"><div class="empty-state-text">尚無薪資記錄，請點「自動產生薪資」</div></td></tr>';
+    tb.innerHTML='<tr><td colspan="10" class="empty-state"><div class="empty-state-text">尚無薪資記錄，請點「自動產生薪資」</div></td></tr>';
     document.getElementById('sal-total-row').style.display='none'; return;
   }
   let totAllow=0,totDeduct=0,totNet=0;
@@ -5596,6 +5631,7 @@ async function loadSalaryRecords() {
       <td style="font-family:'DM Mono',monospace;color:var(--green)">$${fmtNum(r.allowance_total)}</td>
       <td style="font-family:'DM Mono',monospace;color:var(--red)">-$${fmtNum(r.deduction_total)}</td>
       <td style="font-family:'DM Mono',monospace;font-weight:700;color:var(--navy)">$${fmtNum(r.net_pay)}</td>
+      <td style="font-size:12px;color:var(--muted);white-space:nowrap">${r.pay_date||'—'}</td>
       <td><span style="font-size:12px;font-weight:700;color:${sc}">${sl}</span></td>
       <td style="white-space:nowrap">
         <button class="btn btn-outline btn-sm" onclick="openSalDetail(${r.id})">明細</button>

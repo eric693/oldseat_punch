@@ -3969,6 +3969,14 @@ def init_salary_db():
             updated_at      TIMESTAMPTZ   DEFAULT NOW(),
             UNIQUE(staff_id, month)
         )""",
+        """CREATE TABLE IF NOT EXISTS salary_config (
+            id              INT PRIMARY KEY DEFAULT 1,
+            settlement_day  INT DEFAULT 1,
+            pay_day         INT DEFAULT 5,
+            updated_at      TIMESTAMPTZ DEFAULT NOW()
+        )""",
+        "INSERT INTO salary_config (id) VALUES (1) ON CONFLICT (id) DO NOTHING",
+        "ALTER TABLE salary_records ADD COLUMN IF NOT EXISTS pay_date DATE",
     ]
     for sql in migrations:
         try:
@@ -4004,6 +4012,21 @@ def init_salary_db():
 
 init_salary_db()
 
+def _get_salary_config(conn=None):
+    """讀取薪資結算設定，回傳 {'settlement_day': int, 'pay_day': int}"""
+    def _query(c):
+        row = c.execute("SELECT * FROM salary_config WHERE id=1").fetchone()
+        if not row:
+            return {'settlement_day': 1, 'pay_day': 5}
+        return {
+            'settlement_day': int(row['settlement_day'] or 1),
+            'pay_day':        int(row['pay_day']        or 5),
+        }
+    if conn:
+        return _query(conn)
+    with get_db() as c:
+        return _query(c)
+
 def salary_item_row(row):
     if not row: return None
     d = dict(row)
@@ -4020,6 +4043,7 @@ def salary_record_row(row):
     if isinstance(d.get('items'), str):
         try: d['items'] = _json.loads(d['items'])
         except: d['items'] = []
+    if d.get('pay_date'):      d['pay_date']      = d['pay_date'].isoformat()
     if d.get('confirmed_at'): d['confirmed_at'] = d['confirmed_at'].isoformat()
     if d.get('created_at'):   d['created_at']   = d['created_at'].isoformat()
     if d.get('updated_at'):   d['updated_at']   = d['updated_at'].isoformat()
@@ -4540,9 +4564,20 @@ def api_salary_records_list():
 @require_module('salary')
 def api_salary_generate():
     """自動產生或更新該月薪資"""
+    import calendar as _cal2
+    from datetime import date as _d2
     b     = request.get_json(force=True)
     month = b.get('month', '').strip()
     if not month: return jsonify({'error': '請指定月份'}), 400
+
+    # 計算發薪日：薪資月份的下一個月的 pay_day
+    cfg = _get_salary_config()
+    pay_day = cfg['pay_day']
+    year2, mo2 = int(month.split('-')[0]), int(month.split('-')[1])
+    pay_year, pay_mo = (year2, mo2 + 1) if mo2 < 12 else (year2 + 1, 1)
+    effective_pay_day = min(pay_day, _cal2.monthrange(pay_year, pay_mo)[1])
+    pay_date_str = _d2(pay_year, pay_mo, effective_pay_day).isoformat()
+
     with get_db() as conn:
         staff_list = conn.execute(
             "SELECT * FROM punch_staff WHERE active=TRUE"
@@ -4555,25 +4590,26 @@ def api_salary_generate():
                 INSERT INTO salary_records
                   (staff_id, month, base_salary, insured_salary, work_days, actual_days,
                    leave_days, unpaid_days, ot_pay, allowance_total, deduction_total,
-                   net_pay, items, status, updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,'draft',NOW())
+                   net_pay, items, pay_date, status, updated_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,'draft',NOW())
                 ON CONFLICT (staff_id, month) DO UPDATE
                   SET base_salary=%s, insured_salary=%s, work_days=%s, actual_days=%s,
                       leave_days=%s, unpaid_days=%s, ot_pay=%s, allowance_total=%s,
                       deduction_total=%s, net_pay=%s, items=%s::jsonb,
+                      pay_date=COALESCE(salary_records.pay_date, %s),
                       status=CASE WHEN salary_records.status='confirmed' THEN 'confirmed' ELSE 'draft' END,
                       updated_at=NOW()
             """, (
                 data['staff_id'], month, data['base_salary'], data['insured_salary'],
                 data['work_days'], data['actual_days'], data['leave_days'], data['unpaid_days'],
                 data['ot_pay'], data['allowance_total'], data['deduction_total'],
-                data['net_pay'], items_json,
+                data['net_pay'], items_json, pay_date_str,
                 data['base_salary'], data['insured_salary'], data['work_days'], data['actual_days'],
                 data['leave_days'], data['unpaid_days'], data['ot_pay'], data['allowance_total'],
-                data['deduction_total'], data['net_pay'], items_json,
+                data['deduction_total'], data['net_pay'], items_json, pay_date_str,
             ))
             generated += 1
-    return jsonify({'ok': True, 'generated': generated, 'month': month})
+    return jsonify({'ok': True, 'generated': generated, 'month': month, 'pay_date': pay_date_str})
 
 @app.route('/api/salary/records/<int:rid>', methods=['GET'])
 @require_module('salary')
@@ -4714,6 +4750,29 @@ def api_salary_staff_update(sid):
               sid))
         row = conn.execute("SELECT * FROM punch_staff WHERE id=%s", (sid,)).fetchone()
     return jsonify(punch_staff_row(row)) if row else ('', 404)
+
+
+@app.route('/api/salary/config', methods=['GET'])
+@require_module('salary')
+def api_salary_config_get():
+    return jsonify(_get_salary_config())
+
+@app.route('/api/salary/config', methods=['PUT'])
+@require_module('salary')
+def api_salary_config_put():
+    b = request.get_json(force=True)
+    settlement_day = int(b.get('settlement_day', 1))
+    pay_day        = int(b.get('pay_day', 5))
+    if not (1 <= settlement_day <= 28):
+        return jsonify({'error': '結算日需在 1–28 之間'}), 400
+    if not (1 <= pay_day <= 28):
+        return jsonify({'error': '發薪日需在 1–28 之間'}), 400
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE salary_config SET settlement_day=%s, pay_day=%s, updated_at=NOW() WHERE id=1",
+            (settlement_day, pay_day)
+        )
+    return jsonify({'ok': True, 'settlement_day': settlement_day, 'pay_day': pay_day})
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -6778,23 +6837,44 @@ def api_auto_generate_schedule():
 
 def _job_auto_generate_salary():
     """
-    每月 1 日 02:00 (TW) 自動產生上個月薪資草稿。
+    每日 02:00 (TW) 檢查是否為結算日，若是則自動產生上個月薪資草稿。
     使用 pg_try_advisory_lock 確保多 worker 環境只執行一次。
     """
     from datetime import date as _dj, timedelta as _tdj
     import json as _jj
+    import calendar as _calj
 
-    # 取上個月 YYYY-MM
-    today  = _dj.today()
+    today = _dj.today()
+
+    # 讀取結算設定
+    try:
+        cfg = _get_salary_config()
+    except Exception:
+        cfg = {'settlement_day': 1, 'pay_day': 5}
+
+    settlement_day = cfg['settlement_day']
+    pay_day        = cfg['pay_day']
+
+    # 確認今天是否為結算日（處理月底不足的情況，如二月只有 28/29 天）
+    days_in_cur_month = _calj.monthrange(today.year, today.month)[1]
+    effective_settlement = min(settlement_day, days_in_cur_month)
+    if today.day != effective_settlement:
+        return  # 非結算日，跳過
+
+    # 結算的是「上個月」薪資
     first  = today.replace(day=1)
     last_m = (first - _tdj(days=1))
     month  = last_m.strftime('%Y-%m')
+
+    # 計算發薪日（本月的 pay_day）
+    days_in_pay_month = days_in_cur_month
+    effective_pay_day = min(pay_day, days_in_pay_month)
+    pay_date_str = _dj(today.year, today.month, effective_pay_day).isoformat()
 
     LOCK_KEY = 202604011  # 任意唯一整數，代表「薪資自動產生」鎖
 
     try:
         with get_db() as conn:
-            # 嘗試取得 advisory lock（非阻塞），失敗代表另一 worker 已在執行
             locked = conn.execute(
                 "SELECT pg_try_advisory_lock(%s) AS ok", (LOCK_KEY,)
             ).fetchone()['ok']
@@ -6807,31 +6887,32 @@ def _job_auto_generate_salary():
                 ).fetchall()
                 generated = 0
                 for staff in staff_list:
-                    data      = _auto_generate_salary(conn, dict(staff), month)
+                    data       = _auto_generate_salary(conn, dict(staff), month)
                     items_json = _jj.dumps(data['items'], ensure_ascii=False)
                     conn.execute("""
                         INSERT INTO salary_records
                           (staff_id, month, base_salary, insured_salary, work_days, actual_days,
                            leave_days, unpaid_days, ot_pay, allowance_total, deduction_total,
-                           net_pay, items, status, updated_at)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,'draft',NOW())
+                           net_pay, items, pay_date, status, updated_at)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,'draft',NOW())
                         ON CONFLICT (staff_id, month) DO UPDATE
                           SET base_salary=%s, insured_salary=%s, work_days=%s, actual_days=%s,
                               leave_days=%s, unpaid_days=%s, ot_pay=%s, allowance_total=%s,
                               deduction_total=%s, net_pay=%s, items=%s::jsonb,
+                              pay_date=COALESCE(salary_records.pay_date, %s),
                               status=CASE WHEN salary_records.status='confirmed' THEN 'confirmed' ELSE 'draft' END,
                               updated_at=NOW()
                     """, (
                         data['staff_id'], month, data['base_salary'], data['insured_salary'],
                         data['work_days'], data['actual_days'], data['leave_days'], data['unpaid_days'],
                         data['ot_pay'], data['allowance_total'], data['deduction_total'],
-                        data['net_pay'], items_json,
+                        data['net_pay'], items_json, pay_date_str,
                         data['base_salary'], data['insured_salary'], data['work_days'], data['actual_days'],
                         data['leave_days'], data['unpaid_days'], data['ot_pay'], data['allowance_total'],
-                        data['deduction_total'], data['net_pay'], items_json,
+                        data['deduction_total'], data['net_pay'], items_json, pay_date_str,
                     ))
                     generated += 1
-                print(f'[scheduler] 自動薪資產生完成：{month}，共 {generated} 筆', flush=True)
+                print(f'[scheduler] 自動薪資產生完成：{month}，發薪日 {pay_date_str}，共 {generated} 筆', flush=True)
             finally:
                 conn.execute("SELECT pg_advisory_unlock(%s)", (LOCK_KEY,))
     except Exception as e:
@@ -6845,12 +6926,12 @@ def _start_salary_scheduler():
     scheduler = BackgroundScheduler(timezone='Asia/Taipei')
     scheduler.add_job(
         _job_auto_generate_salary,
-        trigger=CronTrigger(day=1, hour=2, minute=0, timezone='Asia/Taipei'),
+        trigger=CronTrigger(hour=2, minute=0, timezone='Asia/Taipei'),  # 每日 02:00 檢查結算日
         id='monthly_salary_generate',
         replace_existing=True,
     )
     scheduler.start()
-    print('[scheduler] 每月薪資自動產生排程已啟動（每月 1 日 02:00 TW）', flush=True)
+    print('[scheduler] 薪資自動產生排程已啟動（每日 02:00 TW 檢查結算日）', flush=True)
 
 
 # 啟動排程器（gunicorn 多 worker 時每個 worker 都會啟動，由 advisory lock 保證只執行一次）
