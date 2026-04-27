@@ -3883,6 +3883,12 @@ def api_leave_balance_update(bid):
 @require_module('leave')
 def api_leave_summary(staff_id, month):
     """取得員工某月請假摘要（供薪資計算用）"""
+    import calendar as _cals
+    from datetime import date as _ds2, timedelta as _tds2
+    y2, m2 = int(month[:4]), int(month[5:])
+    mf = _ds2(y2, m2, 1)
+    ml = _ds2(y2, m2, _cals.monthrange(y2, m2)[1])
+
     with get_db() as conn:
         rows = conn.execute("""
             SELECT lr.*, lt.name as leave_type_name, lt.code, lt.pay_rate
@@ -3890,15 +3896,28 @@ def api_leave_summary(staff_id, month):
             JOIN leave_types lt ON lt.id=lr.leave_type_id
             WHERE lr.staff_id=%s
               AND lr.status='approved'
-              AND to_char(lr.start_date,'YYYY-MM')=%s
+              AND lr.start_date <= %s AND lr.end_date >= %s
             ORDER BY lr.start_date
-        """, (staff_id, month)).fetchall()
+        """, (staff_id, ml, mf)).fetchall()
+
+    def _days_in_month(r):
+        sd = r['start_date'].date() if hasattr(r['start_date'], 'date') else _ds2.fromisoformat(str(r['start_date']))
+        ed = r['end_date'].date()   if hasattr(r['end_date'],   'date') else _ds2.fromisoformat(str(r['end_date']))
+        if sd >= mf and ed <= ml:
+            return float(r['total_days'])
+        cur, cnt = max(sd, mf), 0.0
+        while cur <= min(ed, ml):
+            if cur.weekday() != 6:
+                cnt += 1.0
+            cur += _tds2(days=1)
+        return cnt
+
     total_leave_days = 0.0
     unpaid_days      = 0.0
     half_pay_days    = 0.0
     items = []
     for r in rows:
-        d = float(r['total_days'])
+        d = _days_in_month(r)
         pay_r = float(r['pay_rate'])
         total_leave_days += d
         if pay_r == 0:   unpaid_days   += d
@@ -3908,8 +3927,8 @@ def api_leave_summary(staff_id, month):
             'code':       r['code'],
             'days':       d,
             'pay_rate':   pay_r,
-            'start_date': r['start_date'].isoformat(),
-            'end_date':   r['end_date'].isoformat(),
+            'start_date': r['start_date'].isoformat() if hasattr(r['start_date'], 'isoformat') else str(r['start_date']),
+            'end_date':   r['end_date'].isoformat()   if hasattr(r['end_date'],   'isoformat') else str(r['end_date']),
         })
     return jsonify({
         'staff_id':         staff_id,
@@ -4440,18 +4459,17 @@ def _auto_generate_salary(conn, staff, month, work_days=None):
               AND TO_CHAR(punched_at AT TIME ZONE 'Asia/Taipei','YYYY-MM')=%s
         """, (staff['id'], month)).fetchall()
         punched_dates = {r['work_date'].isoformat() if hasattr(r['work_date'], 'isoformat') else str(r['work_date']) for r in punch_rows}
-        # 已核准請假日期集合（用範圍重疊抓跨月請假）
-        leave_date_rows = conn.execute("""
-            SELECT start_date, end_date FROM leave_requests
-            WHERE staff_id=%s AND status='approved'
-              AND start_date <= %s AND end_date >= %s
-        """, (staff['id'], month_last, month_first)).fetchall()
+        # 已核准請假日期集合 — 直接從 leave_rows 重建，不再發第二次查詢
         leave_date_set = set()
-        for _lr in leave_date_rows:
+        for _lr in leave_rows:
             _ld = _lr['start_date']
             _le = _lr['end_date']
+            if hasattr(_ld, 'date'): _ld = _ld.date()
+            else: _ld = _d5.fromisoformat(str(_ld))
+            if hasattr(_le, 'date'): _le = _le.date()
+            else: _le = _d5.fromisoformat(str(_le))
             while _ld <= _le:
-                leave_date_set.add(_ld.isoformat() if hasattr(_ld, 'isoformat') else str(_ld))
+                leave_date_set.add(_ld.isoformat())
                 _ld += _td5(days=1)
         # 缺勤 = 排班但未打卡且非假日，僅計算過去日期
         absent_date_list = sorted(
@@ -6245,13 +6263,15 @@ def api_dashboard_attendance_heatmap():
             GROUP BY d
         """, (month,)).fetchall()
 
+        _mf = f'{y}-{mo:02d}-01'
+        _ml = f'{y}-{mo:02d}-{days_in:02d}'
         leave_rows = conn.execute("""
             SELECT lr.start_date, lr.end_date, COUNT(*) as cnt
             FROM leave_requests lr
             WHERE lr.status='approved'
-              AND TO_CHAR(lr.start_date,'YYYY-MM')=%s OR TO_CHAR(lr.end_date,'YYYY-MM')=%s
+              AND lr.start_date <= %s AND lr.end_date >= %s
             GROUP BY lr.start_date, lr.end_date
-        """, (month, month)).fetchall()
+        """, (_ml, _mf)).fetchall()
 
     punch_map = {str(r['d']): int(r['cnt']) for r in punch_rows}
 
