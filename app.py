@@ -4228,17 +4228,47 @@ def _auto_generate_salary(conn, staff, month, work_days=None):
     ot_pay = float(ot_rows['total']) if ot_rows else 0.0
 
     # ── 請假資訊 ────────────────────────────────────────────
+    month_first = _d5(y, m, 1)
+    month_last  = _d5(y, m, _cal2.monthrange(y, m)[1])
+
+    # Bug fix: 用日期範圍重疊取代只看 start_date，正確抓跨月請假
     leave_rows = conn.execute("""
-        SELECT lr.total_days, lt.pay_rate, lt.code, lt.name as leave_name
+        SELECT lr.total_days, lt.pay_rate, lt.code, lt.name as leave_name,
+               lr.start_date, lr.end_date
         FROM leave_requests lr
         JOIN leave_types lt ON lt.id = lr.leave_type_id
         WHERE lr.staff_id=%s AND lr.status='approved'
-          AND to_char(lr.start_date,'YYYY-MM')=%s
-    """, (staff['id'], month)).fetchall()
-    leave_days    = sum(float(r['total_days']) for r in leave_rows)
-    unpaid_days   = sum(float(r['total_days']) for r in leave_rows if float(r['pay_rate']) == 0)
-    half_pay_days = sum(float(r['total_days']) for r in leave_rows if 0 < float(r['pay_rate']) < 1)
-    actual_days   = total_work_days - leave_days
+          AND lr.start_date <= %s AND lr.end_date >= %s
+    """, (staff['id'], month_last, month_first)).fetchall()
+
+    def _leave_days_in_month(row):
+        """計算某筆請假在當月的實際天數（處理跨月）"""
+        sd = row['start_date']
+        ed = row['end_date']
+        if hasattr(sd, 'date'): sd = sd.date()
+        else: sd = _d5.fromisoformat(str(sd))
+        if hasattr(ed, 'date'): ed = ed.date()
+        else: ed = _d5.fromisoformat(str(ed))
+        if sd >= month_first and ed <= month_last:
+            return float(row['total_days'])  # 同月：用已計算天數（含半天）
+        # 跨月：重新計算在本月範圍內的非週日天數
+        cur = max(sd, month_first)
+        end = min(ed, month_last)
+        cnt = 0.0
+        while cur <= end:
+            if cur.weekday() != 6:
+                cnt += 1.0
+            cur += _td5(days=1)
+        return cnt
+
+    leave_days  = sum(_leave_days_in_month(r) for r in leave_rows)
+    unpaid_days = sum(_leave_days_in_month(r) for r in leave_rows if float(r['pay_rate']) == 0)
+    # 部分薪假：保留每筆(天數, pay_rate, 假別名)，供後續正確計算扣款
+    half_pay_rows = [
+        (_leave_days_in_month(r), float(r['pay_rate']), r['leave_name'])
+        for r in leave_rows if 0 < float(r['pay_rate']) < 1
+    ]
+    actual_days = total_work_days - leave_days
 
     # ── 日薪 / 時薪（用於請假扣款） ───────────────────────
     if salary_type == 'hourly':
@@ -4382,15 +4412,22 @@ def _auto_generate_salary(conn, staff, month, work_days=None):
         })
         deduction_total += deduct
 
-    if half_pay_days > 0 and daily_wage > 0:
-        leave_names = '、'.join(set(
-            r['leave_name'] for r in leave_rows if 0 < float(r['pay_rate']) < 1
-        ))
-        deduct = round(daily_wage * half_pay_days * 0.5, 2)
+    if half_pay_rows and daily_wage > 0:
+        # Bug fix: 依每筆假別的實際 pay_rate 計算扣款，不再硬寫 0.5
+        total_half_deduct = 0.0
+        notes = []
+        name_set = set()
+        for days_here, pay_r, lname in half_pay_rows:
+            deduct_rate = round(1.0 - pay_r, 4)
+            d = round(daily_wage * days_here * deduct_rate, 2)
+            total_half_deduct += d
+            name_set.add(lname)
+            notes.append(f'{lname} {days_here}天×扣{round(deduct_rate*100,0):.0f}%')
+        deduct = round(total_half_deduct, 2)
         items.append({
-            'id': 'halfpay', 'name': f'半薪假扣款（{leave_names}）', 'type': 'deduction',
+            'id': 'halfpay', 'name': f'部分薪假扣款（{"、".join(name_set)}）', 'type': 'deduction',
             'amount': deduct, 'formula': '',
-            'calc_note': f'{half_pay_days}天 × 日薪${round(daily_wage, 0)} × 0.5',
+            'calc_note': '，'.join(notes) + f'（日薪${round(daily_wage, 0)}）',
         })
         deduction_total += deduct
 
@@ -4403,12 +4440,12 @@ def _auto_generate_salary(conn, staff, month, work_days=None):
               AND TO_CHAR(punched_at AT TIME ZONE 'Asia/Taipei','YYYY-MM')=%s
         """, (staff['id'], month)).fetchall()
         punched_dates = {r['work_date'].isoformat() if hasattr(r['work_date'], 'isoformat') else str(r['work_date']) for r in punch_rows}
-        # 已核准請假日期集合
+        # 已核准請假日期集合（用範圍重疊抓跨月請假）
         leave_date_rows = conn.execute("""
             SELECT start_date, end_date FROM leave_requests
             WHERE staff_id=%s AND status='approved'
-              AND TO_CHAR(start_date,'YYYY-MM')=%s
-        """, (staff['id'], month)).fetchall()
+              AND start_date <= %s AND end_date >= %s
+        """, (staff['id'], month_last, month_first)).fetchall()
         leave_date_set = set()
         for _lr in leave_date_rows:
             _ld = _lr['start_date']
