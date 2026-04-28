@@ -8369,7 +8369,7 @@ def api_salary_preview():
                 SELECT COUNT(*) AS n, COALESCE(SUM(ot_hours),0) AS hrs
                 FROM overtime_requests WHERE staff_id=%s
                   AND status='approved'
-                  AND to_char(COALESCE(ot_date, request_date),'YYYY-MM')=%s
+                  AND to_char(request_date,'YYYY-MM')=%s
             """, (staff['id'], month)).fetchone()
             result.append({
                 'staff_id':       data['staff_id'],
