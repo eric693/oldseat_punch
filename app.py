@@ -11174,7 +11174,7 @@ def mobile_overtime():
     with get_db() as conn:
         conn.execute(
             """INSERT INTO overtime_requests
-               (staff_id, ot_date, ot_hours, reason, status)
+               (staff_id, request_date, ot_hours, reason, status)
                VALUES (%s, %s, %s, %s, 'pending')""",
             (staff_id, ot_date, hours, reason)
         )
@@ -11190,8 +11190,8 @@ def mobile_overtime_list():
     staff_id = int(u['sub'])
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT id, ot_date, ot_hours, reason, status, created_at
-               FROM overtime_requests WHERE staff_id=%s ORDER BY ot_date DESC LIMIT 30""",
+            """SELECT id, request_date AS ot_date, ot_hours, reason, status, created_at
+               FROM overtime_requests WHERE staff_id=%s ORDER BY request_date DESC LIMIT 30""",
             (staff_id,)
         ).fetchall()
     data = []
@@ -11321,7 +11321,7 @@ def mobile_admin_overtime():
     status = request.args.get('status', 'pending')
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT ot.id, ps.name AS staff_name, ot.ot_date, ot.ot_hours,
+            """SELECT ot.id, ps.name AS staff_name, ot.request_date AS ot_date, ot.ot_hours,
                       ot.reason, ot.status, ot.created_at
                FROM overtime_requests ot
                JOIN punch_staff ps ON ot.staff_id = ps.id
