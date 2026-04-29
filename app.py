@@ -3011,8 +3011,9 @@ def _calc_ot_pay(staff_row, ot_hours, day_type='weekday'):
     if day_type in ('holiday', 'special'):
         pay = round(base_hourly * h * 2.0, 0)
     elif day_type == 'rest_day':
-        billed = max(h, 4.0)
-        h1 = min(billed, 2.0); h2 = min(max(0.0, billed - 2.0), 2.0); h3 = max(0.0, billed - 4.0)
+        # 勞基法第24條第2項：休息日8小時以內以8小時計；前2小時1.33x，第3~8小時1.67x，超過8小時依第1項
+        billed = max(h, 8.0)
+        h1 = min(billed, 2.0); h2 = min(max(0.0, billed - 2.0), 6.0); h3 = max(0.0, billed - 8.0)
         pay = round(base_hourly * (h1 * ot_rate1 + h2 * ot_rate2 + h3 * ot_rate3), 0)
     else:
         h1 = min(h, 2.0); h2 = min(max(0.0, h - 2.0), 2.0); h3 = max(0.0, h - 4.0)
@@ -3042,7 +3043,7 @@ def api_ot_review(rid):
         if action == 'approve':
             staff = conn.execute("""
                 SELECT base_salary, hourly_rate, daily_hours,
-                       ot_rate1, ot_rate2, salary_type
+                       ot_rate1, ot_rate2, ot_rate3, salary_type
                 FROM punch_staff WHERE id=%s
             """, (req['staff_id'],)).fetchone()
             if staff:
@@ -3138,8 +3139,8 @@ def api_ot_calc_preview():
     ot_pay, base_hourly = _calc_ot_pay(staff, ot_hours, day_type)
 
     if day_type == 'rest_day':
-        billed = max(ot_hours, 4.0)
-        h1 = min(billed, 2.0); h2 = min(max(0.0, billed - 2.0), 2.0); h3 = max(0.0, billed - 4.0)
+        billed = max(ot_hours, 8.0)
+        h1 = min(billed, 2.0); h2 = min(max(0.0, billed - 2.0), 6.0); h3 = max(0.0, billed - 8.0)
     elif day_type in ('holiday', 'special'):
         h1 = ot_hours; h2 = 0.0; h3 = 0.0
     else:
