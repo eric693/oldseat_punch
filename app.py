@@ -4065,6 +4065,15 @@ def salary_record_row(row):
     if isinstance(d.get('items'), str):
         try: d['items'] = _json.loads(d['items'])
         except: d['items'] = []
+    # 反推 absent_days：work_days - leave_days - actual_days
+    w = float(d.get('work_days') or 0)
+    l = float(d.get('leave_days') or 0)
+    a = float(d.get('actual_days') or 0)
+    d['absent_days'] = max(0.0, round(w - l - a, 1))
+    # 從 items 提取時薪制本薪金額
+    items = d.get('items') or []
+    hourly_item = next((i for i in items if i.get('id') == 'hourly_base'), None)
+    d['hourly_base_pay'] = float(hourly_item['amount']) if hourly_item else 0.0
     if d.get('pay_date'):      d['pay_date']      = d['pay_date'].isoformat()
     if d.get('confirmed_at'): d['confirmed_at'] = d['confirmed_at'].isoformat()
     if d.get('created_at'):   d['created_at']   = d['created_at'].isoformat()
@@ -4604,7 +4613,9 @@ def api_salary_records_list():
     with get_db() as conn:
         rows = conn.execute("""
             SELECT sr.*, ps.name as staff_name, ps.role as staff_role,
-                   ps.employee_code, ps.department
+                   ps.employee_code, ps.department,
+                   ps.salary_type as staff_salary_type,
+                   ps.hourly_rate as staff_hourly_rate
             FROM salary_records sr
             JOIN punch_staff ps ON ps.id=sr.staff_id
             WHERE sr.month=%s
@@ -4617,6 +4628,8 @@ def api_salary_records_list():
         d['staff_role']    = r['staff_role']
         d['employee_code'] = r['employee_code'] or ''
         d['department']    = r['department'] or ''
+        if not d.get('salary_type'): d['salary_type'] = r['staff_salary_type'] or 'monthly'
+        if not d.get('hourly_rate'): d['hourly_rate']  = float(r['staff_hourly_rate'] or 0)
         result.append(d)
     return jsonify(result)
 
@@ -4677,18 +4690,32 @@ def api_salary_record_get(rid):
     with get_db() as conn:
         row = conn.execute("""
             SELECT sr.*, ps.name as staff_name, ps.role as staff_role,
-                   ps.employee_code, ps.department, ps.hire_date
+                   ps.employee_code, ps.department, ps.hire_date,
+                   ps.salary_type as staff_salary_type,
+                   ps.hourly_rate as staff_hourly_rate
             FROM salary_records sr
             JOIN punch_staff ps ON ps.id=sr.staff_id
             WHERE sr.id=%s
         """, (rid,)).fetchone()
-    if not row: return ('', 404)
+        if not row: return ('', 404)
+        # 時薪制：重算每日工時明細與實際工時（punch_details 未存入 salary_records）
+        _actual_work_hours = 0.0
+        _punch_details     = []
+        _st = row.get('staff_salary_type') or 'monthly'
+        if _st == 'hourly':
+            _actual_work_hours, _, _punch_details = _calc_punch_hours(
+                conn, row['staff_id'], row['month']
+            )
     d = salary_record_row(row)
-    d['staff_name']    = row['staff_name']
-    d['staff_role']    = row['staff_role']
-    d['employee_code'] = row['employee_code'] or ''
-    d['department']    = row['department'] or ''
-    d['hire_date']     = row['hire_date'].isoformat() if row['hire_date'] else ''
+    d['staff_name']       = row['staff_name']
+    d['staff_role']       = row['staff_role']
+    d['employee_code']    = row['employee_code'] or ''
+    d['department']       = row['department'] or ''
+    d['hire_date']        = row['hire_date'].isoformat() if row['hire_date'] else ''
+    if not d.get('salary_type'): d['salary_type'] = _st
+    if not d.get('hourly_rate'): d['hourly_rate']  = float(row['staff_hourly_rate'] or 0)
+    d['actual_work_hours'] = _actual_work_hours
+    d['punch_details']     = _punch_details
     return jsonify(d)
 
 @app.route('/api/salary/records/<int:rid>', methods=['PUT'])

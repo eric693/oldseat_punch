@@ -4448,9 +4448,10 @@ async function openOTReview(id) {
   if (pok && pd.base_hourly > 0) {
     const typeLabel = pd.salary_type==='hourly'?'時薪制':'月薪制';
     let detail = `${typeLabel}　時薪 $${pd.base_hourly}/h<br>`;
+    const isRest = (r.day_type||'weekday') === 'rest_day';
     if (pd.h1 > 0) detail += `前2h ${pd.h1}h × ${pd.ot_rate1} = $${Math.round(pd.base_hourly*pd.h1*pd.ot_rate1)}<br>`;
-    if (pd.h2 > 0) detail += `3-4h ${pd.h2}h × ${pd.ot_rate2} = $${Math.round(pd.base_hourly*pd.h2*pd.ot_rate2)}<br>`;
-    if (pd.h3 > 0) detail += `5h起 ${pd.h3}h × ${pd.ot_rate3} = $${Math.round(pd.base_hourly*pd.h3*pd.ot_rate3)}`;
+    if (pd.h2 > 0) detail += `${isRest?'3-8h':'3-4h'} ${pd.h2}h × ${pd.ot_rate2} = $${Math.round(pd.base_hourly*pd.h2*pd.ot_rate2)}<br>`;
+    if (pd.h3 > 0) detail += `${isRest?'9h起':'5h起'} ${pd.h3}h × ${pd.ot_rate3} = $${Math.round(pd.base_hourly*pd.h3*pd.ot_rate3)}`;
     document.getElementById('otrm-pay-detail').innerHTML = detail;
     document.getElementById('otrm-pay-amount').textContent = `$${Number(pd.ot_pay).toLocaleString()}`;
     prevEl.style.display = '';
