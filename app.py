@@ -7030,8 +7030,12 @@ def api_salary_pdf(rid):
             JOIN punch_staff ps ON ps.id = sr.staff_id
             WHERE sr.id = %s
         """, (rid,)).fetchone()
-    if not row:
-        return '找不到薪資記錄', 404
+        if not row:
+            return '找不到薪資記錄', 404
+        # 時薪制：從打卡記錄重新計算每日工時明細（punch_details 未存入 salary_records）
+        _pdf_punch_details = []
+        if row.get('salary_type') == 'hourly':
+            _, _, _pdf_punch_details = _calc_punch_hours(conn, row['staff_id'], row['month'])
     # 員工只能看自己的
     if not session.get('logged_in'):
         if row['staff_id'] != session.get('punch_staff_id'):
@@ -7065,7 +7069,7 @@ def api_salary_pdf(rid):
         </tr>""" for i in deduct_items)
 
     punch_table = ''
-    if is_hourly and d.get('punch_details'):
+    if is_hourly and _pdf_punch_details:
         punch_rows = ''.join(f"""
             <tr>
               <td>{p['date']}</td>
@@ -7073,7 +7077,7 @@ def api_salary_pdf(rid):
               <td>{p['clock_out']}</td>
               <td>{p.get('break_mins',0)} min</td>
               <td class="num">{p['net_hours']} h</td>
-            </tr>""" for p in d['punch_details'])
+            </tr>""" for p in _pdf_punch_details)
         punch_table = f"""
         <h3>每日工時明細</h3>
         <table>
@@ -9404,7 +9408,18 @@ def api_payroll_sync():
         if not records:
             return jsonify({'created': 0, 'message': '無需同步的薪資記錄'})
 
-        record_date = f"{month}-{str(28).zfill(2)}"  # Use 28th as payroll date
+        # 優先用薪資記錄上的 pay_date，否則依 salary_config 計算
+        import calendar as _cal_ps
+        from datetime import date as _d_ps
+        first_pay_date = records[0].get('pay_date') if records else None
+        if first_pay_date:
+            record_date = first_pay_date.isoformat() if hasattr(first_pay_date, 'isoformat') else str(first_pay_date)
+        else:
+            _cfg_ps = _get_salary_config()
+            _y, _m = int(month[:4]), int(month[5:])
+            _py, _pm = (_y, _m + 1) if _m < 12 else (_y + 1, 1)
+            _pd = min(_cfg_ps['pay_day'], _cal_ps.monthrange(_py, _pm)[1])
+            record_date = _d_ps(_py, _pm, _pd).isoformat()
         created = 0
         for sr in records:
             # Main salary entry
