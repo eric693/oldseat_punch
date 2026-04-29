@@ -395,7 +395,7 @@ def _run_annual_leave_sync():
     try:
         with get_db() as conn:
             staff_list = conn.execute(
-                "SELECT id, name, hire_date FROM punch_staff WHERE active=TRUE AND hire_date IS NOT NULL"
+                "SELECT id, name, hire_date FROM punch_staff WHERE active=TRUE AND hire_date IS NOT NULL AND (salary_type IS NULL OR salary_type != 'hourly')"
             ).fetchall()
             lt = conn.execute("SELECT id FROM leave_types WHERE code='annual'").fetchone()
             if not lt:
@@ -3796,7 +3796,7 @@ def api_leave_balance_init():
 
     with get_db() as conn:
         staff_list = conn.execute(
-            "SELECT id, name, hire_date FROM punch_staff WHERE active=TRUE"
+            "SELECT id, name, hire_date FROM punch_staff WHERE active=TRUE AND (salary_type IS NULL OR salary_type != 'hourly')"
         ).fetchall()
         lt = conn.execute("SELECT id FROM leave_types WHERE code='annual'").fetchone()
         if not lt: return jsonify({'error': '找不到特休假類型'}), 404
@@ -3852,15 +3852,17 @@ def api_annual_leave_schedule_public():
         return jsonify({'error': 'not logged in'}), 401
     with get_db() as conn:
         staff = conn.execute(
-            "SELECT name, hire_date FROM punch_staff WHERE id=%s", (sid,)
+            "SELECT name, hire_date, salary_type FROM punch_staff WHERE id=%s", (sid,)
         ).fetchone()
     if not staff:
         return ('', 404)
-    schedule = _calc_annual_leave_schedule(staff['hire_date'])
-    current  = _calc_annual_leave_days(staff['hire_date'])
+    is_hourly = (staff.get('salary_type') or 'monthly') == 'hourly'
+    schedule = [] if is_hourly else _calc_annual_leave_schedule(staff['hire_date'])
+    current  = 0 if is_hourly else _calc_annual_leave_days(staff['hire_date'])
     return jsonify({
         'name':         staff['name'],
         'hire_date':    str(staff['hire_date']) if staff['hire_date'] else None,
+        'salary_type':  staff.get('salary_type') or 'monthly',
         'current_days': current,
         'schedule':     schedule,
     })

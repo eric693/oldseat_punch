@@ -1519,6 +1519,7 @@ async function loadAnnualLeaveCard() {
     if (!res.ok) { card.innerHTML = ''; return; }
     const data = await res.json();
     if (!data.hire_date) { card.innerHTML = ''; return; }
+    if (data.salary_type === 'hourly') { card.innerHTML = ''; return; }
     const schedule   = data.schedule || [];
     const currentDays= data.current_days || 0;
 
@@ -1756,6 +1757,10 @@ async function showMyAnnualSchedule() {
     const data = await res.json();
     if (!data.hire_date) {
       showToast('尚未設定到職日，請聯絡管理員', 'err');
+      return;
+    }
+    if (data.salary_type === 'hourly') {
+      showToast('兼職（時薪）人員不適用特休排程，假期餘額請洽管理員確認', 'ok');
       return;
     }
     const schedule = data.schedule || [];
