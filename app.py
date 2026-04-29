@@ -4336,10 +4336,12 @@ def _auto_generate_salary(conn, staff, month, work_days=None):
                 overtime_h = max(0.0, pd['net_hours'] - daily_hours)
                 if overtime_h > 0:
                     h1 = min(overtime_h, 2.0)
-                    h2 = max(0.0, overtime_h - 2.0)
+                    h2 = min(max(0.0, overtime_h - 2.0), 2.0)
+                    h3 = max(0.0, overtime_h - 4.0)
                     rate1 = float(staff.get('ot_rate1') or 1.33)
                     rate2 = float(staff.get('ot_rate2') or 1.67)
-                    ot_pay += round(hourly_rate * (h1 * (rate1 - 1.0) + h2 * (rate2 - 1.0)), 2)
+                    rate3 = float(staff.get('ot_rate3') or 2.0)
+                    ot_pay += round(hourly_rate * (h1 * (rate1 - 1.0) + h2 * (rate2 - 1.0) + h3 * (rate3 - 1.0)), 2)
 
         # 時薪制的保險費以 insured_salary 為準（若未設定則用月薪換算）
         if insured_salary == 0:
