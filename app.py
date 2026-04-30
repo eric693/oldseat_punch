@@ -1131,7 +1131,7 @@ def api_punch_records():
     return jsonify([punch_record_row(r) for r in rows])
 
 @app.route('/api/punch/records', methods=['POST'])
-@login_required
+@require_module('punch')
 def api_punch_record_manual():
     b          = request.get_json(force=True)
     staff_id   = b.get('staff_id')
@@ -1156,7 +1156,7 @@ def api_punch_record_manual():
     return jsonify(d), 201
 
 @app.route('/api/punch/records/<int:rid>', methods=['PUT'])
-@login_required
+@require_module('punch')
 def api_punch_record_update(rid):
     b = request.get_json(force=True)
     punch_type = b.get('punch_type')
@@ -1362,6 +1362,10 @@ def api_attendance_monthly_stats():
         if not has_in and has_out:
             s['missing_in_count'] += 1
             s['anomaly_dates'].append({'date': ds, 'type': 'missing_in', 'label': '缺上班卡'})
+        # 同一天 in/out 數量不對稱（例：2 in + 1 out）
+        if has_in and has_out and len(bucket['ins']) != len(bucket['outs']):
+            s['anomaly_dates'].append({'date': ds, 'type': 'unmatched_punch',
+                                       'label': f'配對異常（上班 {len(bucket["ins"])} 次 / 下班 {len(bucket["outs"])} 次）'})
 
         # 遲到（比對班別）
         if has_in:
@@ -1465,7 +1469,7 @@ def api_punch_req_delete(rid):
 # ═══════════════════════════════════════════════════════════════════
 
 CUSTOM_RICHMENU_IMAGE_PATH = '/tmp/custom_richmenu.png'
-_pending_line_punches = {}   # {line_user_id: punch_type}
+_pending_line_punches = {}   # {line_user_id: (punch_type, date)}  — expires at end of day
 _reply_token_map = {}        # {line_user_id: reply_token} — consumed on first use
 
 
@@ -1639,6 +1643,8 @@ def _handle_line_punch_event(event, cfg):
         if text == '解除綁定':
             with get_db() as conn:
                 conn.execute("UPDATE punch_staff SET line_user_id=NULL WHERE id=%s", (staff['id'],))
+            _pending_line_punches.pop(user_id, None)
+            _reply_token_map.pop(user_id, None)
             _send_line_punch(user_id, '已解除 LINE 帳號綁定。'); return
 
         punch_type = PUNCH_CMDS.get(text)
@@ -1664,7 +1670,8 @@ def _handle_line_punch_event(event, cfg):
                             api.push_message(user_id, msg)
                     except Exception as _e:
                         print(f"[LINE PUNCH] location qr error: {_e}")
-                _pending_line_punches[user_id] = punch_type
+                from datetime import datetime as _dtp, timezone as _tzp, timedelta as _tdp
+                _pending_line_punches[user_id] = (punch_type, _dtp.now(_tzp(_tdp(hours=8))).date())
             else:
                 _do_line_punch(staff, user_id, None, None, punch_type, PUNCH_LABEL)
         elif text in ('查餘假', '餘假', '假期', '查假', '特休'):
@@ -1695,11 +1702,17 @@ def _do_line_punch(staff, user_id, lat, lng, forced_type, PUNCH_LABEL):
     from datetime import datetime as _dt3, timezone as _tz3, timedelta as _td3
     TW = _tz3(_td3(hours=8))
 
+    # Discard stale pending entry before deciding punch type
+    if user_id in _pending_line_punches:
+        _pt, _pd = _pending_line_punches[user_id]
+        if _pd != _dt3.now(TW).date():
+            del _pending_line_punches[user_id]
+
     # Determine punch type
     if forced_type:
         punch_type = forced_type
     elif user_id in _pending_line_punches:
-        punch_type = _pending_line_punches.pop(user_id)
+        punch_type, _ = _pending_line_punches.pop(user_id)
     else:
         with get_db() as conn:
             last = conn.execute("""
@@ -5099,32 +5112,38 @@ def _is_holiday(conn, date_str):
 @require_module('holiday')
 def api_holidays_list():
     year = request.args.get('year', '')
-    conds, params = ['TRUE'], []
-    if year:
-        conds.append("EXTRACT(YEAR FROM date)=%s")
-        params.append(int(year))
     with get_db() as conn:
-        rows = conn.execute(
-            f"SELECT * FROM public_holidays WHERE {' AND '.join(conds)} ORDER BY date",
-            params
-        ).fetchall()
+        if year:
+            rows = conn.execute(
+                "SELECT * FROM public_holidays WHERE EXTRACT(YEAR FROM date)=%s ORDER BY date",
+                (int(year),)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM public_holidays ORDER BY date"
+            ).fetchall()
     return jsonify([holiday_row(r) for r in rows])
 
 @app.route('/api/holidays/public', methods=['GET'])
 def api_holidays_public():
     """Public endpoint for staff page"""
-    year = request.args.get('year', '')
+    year  = request.args.get('year', '')
     month = request.args.get('month', '')
-    conds, params = ['TRUE'], []
-    if year:
-        conds.append("EXTRACT(YEAR FROM date)=%s"); params.append(int(year))
-    if month:
-        conds.append("to_char(date,'YYYY-MM')=%s"); params.append(month)
     with get_db() as conn:
-        rows = conn.execute(
-            f"SELECT date, name FROM public_holidays WHERE {' AND '.join(conds)} ORDER BY date",
-            params
-        ).fetchall()
+        if month:
+            rows = conn.execute(
+                "SELECT date, name FROM public_holidays WHERE to_char(date,'YYYY-MM')=%s ORDER BY date",
+                (month,)
+            ).fetchall()
+        elif year:
+            rows = conn.execute(
+                "SELECT date, name FROM public_holidays WHERE EXTRACT(YEAR FROM date)=%s ORDER BY date",
+                (int(year),)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT date, name FROM public_holidays ORDER BY date"
+            ).fetchall()
     return jsonify({r['date'].isoformat(): r['name'] for r in rows})
 
 @app.route('/api/holidays', methods=['POST'])
