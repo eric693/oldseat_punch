@@ -1071,6 +1071,7 @@ def api_punch_staff_update(sid):
     if not name or not username:
         return jsonify({'error': '姓名和帳號為必填'}), 400
     with get_db() as conn:
+        conn.execute("SELECT id FROM punch_staff WHERE id=%s FOR UPDATE", (sid,))
         if password:
             if len(password) < 4:
                 return jsonify({'error': '密碼至少 4 個字元'}), 400
@@ -3629,6 +3630,8 @@ def api_leave_request_review(rid):
         elif action == 'reject' and old_status == 'approved':
             _update_leave_balance(conn, old['staff_id'], old['leave_type_id'],
                                   str(old['start_date'])[:4], -float(old['total_days']))
+            _unconfirm_salary_for_leave(conn, old['staff_id'],
+                                        str(old['start_date']), str(old['end_date']))
     if row:
         if old.get('start_time') and old.get('end_time'):
             st = str(old['start_time'])[:5]; et = str(old['end_time'])[:5]
@@ -3653,6 +3656,8 @@ def api_leave_request_delete(rid):
         if old['status'] == 'approved':
             _update_leave_balance(conn, old['staff_id'], old['leave_type_id'],
                                   str(old['start_date'])[:4], -float(old['total_days']))
+            _unconfirm_salary_for_leave(conn, old['staff_id'],
+                                        str(old['start_date']), str(old['end_date']))
     return jsonify({'deleted': rid})
 
 def _update_leave_balance(conn, staff_id, leave_type_id, year_str, delta_days):
@@ -3664,6 +3669,27 @@ def _update_leave_balance(conn, staff_id, leave_type_id, year_str, delta_days):
           SET used_days = leave_balances.used_days + EXCLUDED.used_days,
               updated_at = NOW()
     """, (staff_id, leave_type_id, year, delta_days))
+
+def _unconfirm_salary_for_leave(conn, staff_id, start_date_str, end_date_str):
+    """Revert confirmed salary records to draft when an approved leave is rejected/deleted.
+    Returns list of affected month strings."""
+    from datetime import date as _dl
+    start = _dl.fromisoformat(str(start_date_str)[:10])
+    end   = _dl.fromisoformat(str(end_date_str)[:10])
+    months, cur = set(), start.replace(day=1)
+    while cur <= end.replace(day=1):
+        months.add(cur.strftime('%Y-%m'))
+        cur = (cur.replace(day=28) + __import__('datetime').timedelta(days=4)).replace(day=1)
+    affected = []
+    for m in months:
+        row = conn.execute("""
+            UPDATE salary_records SET status='draft', updated_at=NOW()
+            WHERE staff_id=%s AND month=%s AND status='confirmed'
+            RETURNING month
+        """, (staff_id, m)).fetchone()
+        if row:
+            affected.append(row['month'])
+    return affected
 
 # ── Employee: submit leave request ────────────────────────────────
 
@@ -4679,20 +4705,25 @@ def api_salary_generate():
                    net_pay, items, pay_date, status, updated_at)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,'draft',NOW())
                 ON CONFLICT (staff_id, month) DO UPDATE
-                  SET base_salary=%s, insured_salary=%s, work_days=%s, actual_days=%s,
-                      leave_days=%s, unpaid_days=%s, ot_pay=%s, allowance_total=%s,
-                      deduction_total=%s, net_pay=%s, items=%s::jsonb,
-                      pay_date=COALESCE(salary_records.pay_date, %s),
-                      status=CASE WHEN salary_records.status='confirmed' THEN 'confirmed' ELSE 'draft' END,
-                      updated_at=NOW()
+                  SET base_salary     = CASE WHEN salary_records.status='confirmed' THEN salary_records.base_salary     ELSE EXCLUDED.base_salary     END,
+                      insured_salary  = CASE WHEN salary_records.status='confirmed' THEN salary_records.insured_salary  ELSE EXCLUDED.insured_salary  END,
+                      work_days       = CASE WHEN salary_records.status='confirmed' THEN salary_records.work_days       ELSE EXCLUDED.work_days       END,
+                      actual_days     = CASE WHEN salary_records.status='confirmed' THEN salary_records.actual_days     ELSE EXCLUDED.actual_days     END,
+                      leave_days      = CASE WHEN salary_records.status='confirmed' THEN salary_records.leave_days      ELSE EXCLUDED.leave_days      END,
+                      unpaid_days     = CASE WHEN salary_records.status='confirmed' THEN salary_records.unpaid_days     ELSE EXCLUDED.unpaid_days     END,
+                      ot_pay          = CASE WHEN salary_records.status='confirmed' THEN salary_records.ot_pay          ELSE EXCLUDED.ot_pay          END,
+                      allowance_total = CASE WHEN salary_records.status='confirmed' THEN salary_records.allowance_total ELSE EXCLUDED.allowance_total END,
+                      deduction_total = CASE WHEN salary_records.status='confirmed' THEN salary_records.deduction_total ELSE EXCLUDED.deduction_total END,
+                      net_pay         = CASE WHEN salary_records.status='confirmed' THEN salary_records.net_pay         ELSE EXCLUDED.net_pay         END,
+                      items           = CASE WHEN salary_records.status='confirmed' THEN salary_records.items           ELSE EXCLUDED.items::jsonb    END,
+                      pay_date        = COALESCE(salary_records.pay_date, EXCLUDED.pay_date),
+                      status          = CASE WHEN salary_records.status='confirmed' THEN 'confirmed' ELSE 'draft' END,
+                      updated_at      = NOW()
             """, (
                 data['staff_id'], month, data['base_salary'], data['insured_salary'],
                 data['work_days'], data['actual_days'], data['leave_days'], data['unpaid_days'],
                 data['ot_pay'], data['allowance_total'], data['deduction_total'],
                 data['net_pay'], items_json, pay_date_str,
-                data['base_salary'], data['insured_salary'], data['work_days'], data['actual_days'],
-                data['leave_days'], data['unpaid_days'], data['ot_pay'], data['allowance_total'],
-                data['deduction_total'], data['net_pay'], items_json, pay_date_str,
             ))
             generated += 1
     return jsonify({'ok': True, 'generated': generated, 'month': month, 'pay_date': pay_date_str})
@@ -4822,6 +4853,7 @@ def api_salary_staff_update(sid):
     def _f(k, default=0): return float(b.get(k, default) or default)
     def _s(k): return b.get(k, '').strip() if b.get(k) else None
     with get_db() as conn:
+        conn.execute("SELECT id FROM punch_staff WHERE id=%s FOR UPDATE", (sid,))
         salary_item_ids = b.get('salary_item_ids')
         salary_item_ids_json = _json.dumps(salary_item_ids) if salary_item_ids is not None else None
         overrides = b.get('salary_item_overrides')  # dict {str(item_id): amount}
@@ -6019,17 +6051,22 @@ def api_punch_req_review_v2(rid):
         row = conn.execute("""
             UPDATE punch_requests
             SET status=%s, reviewed_by=%s, review_note=%s, reviewed_at=NOW()
-            WHERE id=%s
+            WHERE id=%s AND status='pending'
             RETURNING *, (SELECT name FROM punch_staff WHERE id=staff_id) as staff_name
         """, (new_status, reviewed_by, review_note, rid)).fetchone()
         if not row: return ('', 404)
         if action == 'approve':
-            conn.execute("""
-                INSERT INTO punch_records
-                  (staff_id, punch_type, punched_at, note, is_manual, manual_by)
-                VALUES (%s,%s,%s,%s,TRUE,%s)
-            """, (row['staff_id'], row['punch_type'], row['requested_at'],
-                  f'補打卡申請 #{rid}：{row["reason"]}', reviewed_by))
+            existing = conn.execute("""
+                SELECT id FROM punch_records
+                WHERE staff_id=%s AND punch_type=%s AND punched_at=%s
+            """, (row['staff_id'], row['punch_type'], row['requested_at'])).fetchone()
+            if not existing:
+                conn.execute("""
+                    INSERT INTO punch_records
+                      (staff_id, punch_type, punched_at, note, is_manual, manual_by)
+                    VALUES (%s,%s,%s,%s,TRUE,%s)
+                """, (row['staff_id'], row['punch_type'], row['requested_at'],
+                      f'補打卡申請 #{rid}：{row["reason"]}', reviewed_by))
     # LINE notification
     LABEL = {'in':'上班打卡','out':'下班打卡','break_out':'休息開始','break_in':'休息結束'}
     dt_str = row['requested_at'].isoformat()[:16].replace('T',' ')
@@ -7005,20 +7042,25 @@ def _job_auto_generate_salary():
                            net_pay, items, pay_date, status, updated_at)
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,'draft',NOW())
                         ON CONFLICT (staff_id, month) DO UPDATE
-                          SET base_salary=%s, insured_salary=%s, work_days=%s, actual_days=%s,
-                              leave_days=%s, unpaid_days=%s, ot_pay=%s, allowance_total=%s,
-                              deduction_total=%s, net_pay=%s, items=%s::jsonb,
-                              pay_date=COALESCE(salary_records.pay_date, %s),
-                              status=CASE WHEN salary_records.status='confirmed' THEN 'confirmed' ELSE 'draft' END,
-                              updated_at=NOW()
+                          SET base_salary     = CASE WHEN salary_records.status='confirmed' THEN salary_records.base_salary     ELSE EXCLUDED.base_salary     END,
+                              insured_salary  = CASE WHEN salary_records.status='confirmed' THEN salary_records.insured_salary  ELSE EXCLUDED.insured_salary  END,
+                              work_days       = CASE WHEN salary_records.status='confirmed' THEN salary_records.work_days       ELSE EXCLUDED.work_days       END,
+                              actual_days     = CASE WHEN salary_records.status='confirmed' THEN salary_records.actual_days     ELSE EXCLUDED.actual_days     END,
+                              leave_days      = CASE WHEN salary_records.status='confirmed' THEN salary_records.leave_days      ELSE EXCLUDED.leave_days      END,
+                              unpaid_days     = CASE WHEN salary_records.status='confirmed' THEN salary_records.unpaid_days     ELSE EXCLUDED.unpaid_days     END,
+                              ot_pay          = CASE WHEN salary_records.status='confirmed' THEN salary_records.ot_pay          ELSE EXCLUDED.ot_pay          END,
+                              allowance_total = CASE WHEN salary_records.status='confirmed' THEN salary_records.allowance_total ELSE EXCLUDED.allowance_total END,
+                              deduction_total = CASE WHEN salary_records.status='confirmed' THEN salary_records.deduction_total ELSE EXCLUDED.deduction_total END,
+                              net_pay         = CASE WHEN salary_records.status='confirmed' THEN salary_records.net_pay         ELSE EXCLUDED.net_pay         END,
+                              items           = CASE WHEN salary_records.status='confirmed' THEN salary_records.items           ELSE EXCLUDED.items::jsonb    END,
+                              pay_date        = COALESCE(salary_records.pay_date, EXCLUDED.pay_date),
+                              status          = CASE WHEN salary_records.status='confirmed' THEN 'confirmed' ELSE 'draft' END,
+                              updated_at      = NOW()
                     """, (
                         data['staff_id'], month, data['base_salary'], data['insured_salary'],
                         data['work_days'], data['actual_days'], data['leave_days'], data['unpaid_days'],
                         data['ot_pay'], data['allowance_total'], data['deduction_total'],
                         data['net_pay'], items_json, pay_date_str,
-                        data['base_salary'], data['insured_salary'], data['work_days'], data['actual_days'],
-                        data['leave_days'], data['unpaid_days'], data['ot_pay'], data['allowance_total'],
-                        data['deduction_total'], data['net_pay'], items_json, pay_date_str,
                     ))
                     generated += 1
                 print(f'[scheduler] 自動薪資產生完成：{month}，發薪日 {pay_date_str}，共 {generated} 筆', flush=True)
@@ -7302,12 +7344,17 @@ def api_punch_req_batch():
             """, (new_status, by, note, rid)).fetchone()
             if row:
                 if action == 'approve':
-                    conn.execute("""
-                        INSERT INTO punch_records
-                          (staff_id, punch_type, punched_at, note, is_manual, manual_by)
-                        VALUES (%s,%s,%s,%s,TRUE,%s)
-                    """, (row['staff_id'], row['punch_type'], row['requested_at'],
-                          f'補打卡申請#{rid}', by))
+                    existing = conn.execute("""
+                        SELECT id FROM punch_records
+                        WHERE staff_id=%s AND punch_type=%s AND punched_at=%s
+                    """, (row['staff_id'], row['punch_type'], row['requested_at'])).fetchone()
+                    if not existing:
+                        conn.execute("""
+                            INSERT INTO punch_records
+                              (staff_id, punch_type, punched_at, note, is_manual, manual_by)
+                            VALUES (%s,%s,%s,%s,TRUE,%s)
+                        """, (row['staff_id'], row['punch_type'], row['requested_at'],
+                              f'補打卡申請#{rid}', by))
                 _notify_review_result(row['staff_id'], '補打卡申請', action,
                                       note and f'批次審核意見：{note}' or '')
                 done += 1
@@ -7396,6 +7443,11 @@ def api_leave_batch():
                 if action == 'approve':
                     _update_leave_balance(conn, old['staff_id'], old['leave_type_id'],
                                           str(old['start_date'])[:4], float(old['total_days']))
+                elif action == 'reject' and old['status'] == 'approved':
+                    _update_leave_balance(conn, old['staff_id'], old['leave_type_id'],
+                                          str(old['start_date'])[:4], -float(old['total_days']))
+                    _unconfirm_salary_for_leave(conn, old['staff_id'],
+                                                str(old['start_date']), str(old['end_date']))
                 if old.get('start_time') and old.get('end_time'):
                     st = str(old['start_time'])[:5]; et = str(old['end_time'])[:5]
                     _extra = f"{str(old['start_date'])} {st}～{et}（{float(old['total_days'])*8:.1f} 小時）"
