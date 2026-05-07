@@ -121,7 +121,7 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group.full-width { grid-column: 1 / -1; }
 .form-label { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
-.form-input { padding: 10px 13px; border: 1.5px solid var(--border); border-radius: 7px; font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text); background: var(--bg); outline: none; transition: border-color 0.15s, box-shadow 0.15s; }
+.form-input { padding: 10px 13px; border: 1.5px solid var(--border); border-radius: 7px; font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text); background: var(--bg); outline: none; transition: border-color 0.15s, box-shadow 0.15s; width: 100%; }
 .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(74,123,218,0.1); background: var(--surface); }
 .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
 
@@ -429,8 +429,8 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
       <div class="card">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>日期</th><th>員工</th><th>上班</th><th>下班</th><th>工時</th><th>補打卡</th></tr></thead>
-            <tbody id="sum-tbody"><tr><td colspan="6" class="empty-state"><div class="empty-state-text">請選擇月份</div></td></tr></tbody>
+            <thead><tr><th>日期</th><th>員工</th><th>上班</th><th>下班</th><th>工時</th><th>假日/假別</th><th>補打卡</th></tr></thead>
+            <tbody id="sum-tbody"><tr><td colspan="7" class="empty-state"><div class="empty-state-text">請選擇月份</div></td></tr></tbody>
           </table>
         </div>
       </div>
@@ -455,8 +455,8 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
         <div class="card-header"><span class="card-title">打卡記錄</span><span id="rec-count" style="font-size:12px;color:var(--muted)"></span></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>時間</th><th>員工</th><th>職稱</th><th>類型</th><th>備註</th><th>補打</th><th>操作</th></tr></thead>
-            <tbody id="rec-tbody"><tr><td colspan="7" class="empty-state"><div class="empty-state-text">載入中...</div></td></tr></tbody>
+            <thead><tr><th>時間</th><th>員工</th><th>職稱</th><th>類型</th><th>假日/假別</th><th>備註</th><th>補打</th><th>操作</th></tr></thead>
+            <tbody id="rec-tbody"><tr><td colspan="8" class="empty-state"><div class="empty-state-text">載入中...</div></td></tr></tbody>
           </table>
         </div>
       </div>
@@ -2067,8 +2067,17 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
         <div><label class="form-label">緯度</label><input class="form-input" id="glm-lat" placeholder="例：25.033964" type="number" step="0.000001"></div>
         <div><label class="form-label">經度</label><input class="form-input" id="glm-lng" placeholder="例：121.564468" type="number" step="0.000001"></div>
       </div>
-      <div style="margin-bottom:14px"><label class="form-label">允許範圍（公尺）</label><input class="form-input" id="glm-radius" type="number" min="10" max="5000" value="100" style="width:140px"><span style="font-size:12px;color:var(--muted);margin-left:10px">超出此距離即視為不在範圍內</span></div>
-      <div style="margin-bottom:6px"><label class="form-label">狀態</label><select class="form-input" id="glm-active" style="width:auto"><option value="1">啟用</option><option value="0">停用</option></select></div>
+      <div class="form-row">
+        <div>
+          <label class="form-label">允許範圍（公尺）</label>
+          <input class="form-input" id="glm-radius" type="number" min="10" max="5000" value="100">
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">超出此距離即視為不在範圍內</div>
+        </div>
+        <div>
+          <label class="form-label">狀態</label>
+          <select class="form-input" id="glm-active"><option value="1">啟用</option><option value="0">停用</option></select>
+        </div>
+      </div>
       <div style="margin-top:14px"><button class="btn btn-outline btn-sm" onclick="getLocGPS()">取得目前位置</button><span id="glm-gps-msg" style="font-size:12px;color:var(--muted);margin-left:10px"></span></div>
     </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeLocModal()">取消</button><button class="btn btn-primary" onclick="saveLocation()">儲存</button></div>
@@ -2140,7 +2149,7 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
         <div><label class="form-label">適用部門（選填）</label><input class="form-input" id="stm-dept" placeholder="例：外場、廚房"></div>
         <div><label class="form-label">排序</label><input class="form-input" type="number" id="stm-sort" value="0" min="0"></div>
       </div>
-      <div><label class="form-label">狀態</label><select class="form-input" id="stm-active" style="width:auto"><option value="1">啟用</option><option value="0">停用</option></select></div>
+      <div><label class="form-label">狀態</label><select class="form-input" id="stm-active"><option value="1">啟用</option><option value="0">停用</option></select></div>
     </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeShiftTypeModal()">取消</button><button class="btn btn-primary" onclick="saveShiftType()">儲存</button></div>
   </div>
@@ -2332,7 +2341,7 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
         <div><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="lam-end-half"> <span class="form-label" style="margin:0">結束日半天</span></label></div>
       </div>
       <div id="lam-days-preview" style="font-size:13px;color:var(--accent);margin-bottom:12px;min-height:18px"></div>
-      <div style="margin-bottom:12px"><label class="form-label">狀態</label><select class="form-input" id="lam-status" style="width:auto"><option value="approved">直接核准</option><option value="pending">待審核</option></select></div>
+      <div style="margin-bottom:12px"><label class="form-label">狀態</label><select class="form-input" id="lam-status"><option value="approved">直接核准</option><option value="pending">待審核</option></select></div>
       <div><label class="form-label">原因/備註</label><input class="form-input" id="lam-reason" placeholder="選填" style="width:100%"></div>
     </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeLeaveAdminModal()">取消</button><button class="btn btn-primary" onclick="saveLeaveAdmin()">儲存</button></div>
@@ -2428,8 +2437,8 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
         <div><label class="form-label">項目名稱 *</label><input class="form-input" id="sim-name" placeholder="例：職務加給"></div>
         <div><label class="form-label">類型</label><select class="form-input" id="sim-type"><option value="allowance">津貼（加項）</option><option value="deduction">扣除（減項）</option></select></div>
       </div>
-      <div style="margin-bottom:12px"><label class="form-label">計算公式（優先）</label><div style="display:flex;gap:6px">
-          <input class="form-input" id="sim-formula" placeholder="例：insured_salary*0.105*0.2　留空則用固定金額" style="flex:1">
+      <div style="margin-bottom:12px"><label class="form-label">計算公式（優先）</label><div style="display:flex;gap:6px;align-items:center">
+          <input class="form-input" id="sim-formula" placeholder="例：insured_salary*0.105*0.2　留空則用固定金額" style="flex:1;width:auto">
           <button class="btn btn-outline btn-sm" type="button" onclick="openFormulaEditor('sim-formula',document.getElementById('sim-formula').value)">編輯器</button>
         </div></div>
       <div class="form-row">
@@ -2494,9 +2503,7 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
         <div><label class="form-label">類別</label><select class="form-input" id="frm-cat"></select></div>
         <div><label class="form-label">金額 *</label><input class="form-input" type="number" id="frm-amount" min="0" step="1" placeholder="0"></div>
       </div>
-      <div class="form-row">
-        <div class="full-width"><label class="form-label">標題 *</label><input class="form-input" id="frm-title-input" placeholder="例：食材採購、客桌消費"></div>
-      </div>
+      <div style="margin-bottom:12px"><label class="form-label">標題 *</label><input class="form-input" id="frm-title-input" placeholder="例：食材採購、客桌消費"></div>
       <div class="form-row">
         <div><label class="form-label">廠商/店家</label><input class="form-input" id="frm-vendor" placeholder="選填"></div>
         <div><label class="form-label">發票/單據號碼</label><input class="form-input" id="frm-invoice" placeholder="選填"></div>
@@ -2592,15 +2599,15 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
           <input class="form-input" id="oem-vendor">
         </div>
       </div>
-      <div>
+      <div style="margin-bottom:12px">
         <label class="form-label">標題 *</label>
         <input class="form-input" id="oem-title">
       </div>
-      <div style="margin-top:10px">
+      <div style="margin-bottom:12px">
         <label class="form-label">發票 / 單據號碼</label>
         <input class="form-input" id="oem-invoice_no">
       </div>
-      <div style="margin-top:10px">
+      <div>
         <label class="form-label">備註</label>
         <input class="form-input" id="oem-note">
       </div>
@@ -3881,6 +3888,7 @@ async function loadPunchSummary() {
     tb.innerHTML = '<tr><td colspan="6" class="empty-state"><div class="empty-state-text">該月無打卡記錄</div></td></tr>';
     return;
   }
+  const PAY_COLOR_SUM = {'全薪':'var(--green)','半薪':'var(--accent)','無薪':'var(--red)'};
   tb.innerHTML = data.map(r => {
     const ci = r.clock_in  ? r.clock_in.slice(11,16)  : '<span style="color:var(--muted)">—</span>';
     const co = r.clock_out ? r.clock_out.slice(11,16) : '<span style="color:var(--muted)">—</span>';
@@ -3889,12 +3897,22 @@ async function loadPunchSummary() {
       const h = Math.floor(r.duration_min / 60), m = r.duration_min % 60;
       dur = h > 0 ? `${h}h ${m}m` : `${m}m`;
     }
+    // 假日 / 假別 badges
+    let tagHtml = '';
+    if (r.holiday_name) {
+      tagHtml += `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:700;background:#fee2e2;color:var(--red);margin:1px 2px 1px 0">${escHtml(r.holiday_name)}</span>`;
+    }
+    (r.leaves||[]).forEach(lv => {
+      const c = PAY_COLOR_SUM[lv.pay_label]||'var(--muted)';
+      tagHtml += `<span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;background:#f3f0ff;color:${c};margin:1px 2px 1px 0">${escHtml(lv.leave_name)} <span style="font-size:10px">${escHtml(lv.pay_label)}</span></span>`;
+    });
     return `<tr>
       <td style="font-family:'DM Mono',monospace;font-size:12px;white-space:nowrap">${r.work_date||''}</td>
       <td style="font-weight:600">${escHtml(r.staff_name)}</td>
       <td style="font-family:'DM Mono',monospace;color:var(--green)">${ci}</td>
       <td style="font-family:'DM Mono',monospace;color:var(--red)">${co}</td>
       <td style="font-family:'DM Mono',monospace;font-weight:600">${dur}</td>
+      <td style="font-size:12px">${tagHtml||'<span style="color:var(--muted)">—</span>'}</td>
       <td>${r.has_manual ? '<span class="punch-manual-badge">含補打</span>' : ''}</td>
     </tr>`;
   }).join('');
@@ -3937,14 +3955,30 @@ function clearRecFilter() {
 function renderPunchRecords() {
   const tb = document.getElementById('rec-tbody');
   document.getElementById('rec-count').textContent = `共 ${punchRecords.length} 筆`;
-  if (!punchRecords.length) { tb.innerHTML = '<tr><td colspan="7" class="empty-state"><div class="empty-state-text">無記錄</div></td></tr>'; return; }
+  if (!punchRecords.length) { tb.innerHTML = '<tr><td colspan="8" class="empty-state"><div class="empty-state-text">無記錄</div></td></tr>'; return; }
+  const DAY_TYPE_STYLE = {
+    '例假日':  'background:#fef9c3;color:#92400e',
+    '休息日':  'background:#e0f2fe;color:#0369a1',
+    '國定假日':'background:#fee2e2;color:#b91c1c',
+  };
+  const PAY_COLOR_REC = {'全薪':'var(--green)','半薪':'var(--accent)','無薪':'var(--red)'};
   tb.innerHTML = punchRecords.map(r => {
     const dt = r.punched_at ? r.punched_at.slice(0,16).replace('T',' ') : '';
+    let dayHtml = '';
+    if (r.day_type && DAY_TYPE_STYLE[r.day_type]) {
+      const label = r.day_type === '國定假日' && r.holiday_name ? r.holiday_name : r.day_type;
+      dayHtml += `<span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;${DAY_TYPE_STYLE[r.day_type]}">${escHtml(label)}</span>`;
+    }
+    (r.leaves||[]).forEach(lv => {
+      const c = PAY_COLOR_REC[lv.pay_label] || 'var(--text)';
+      dayHtml += ` <span style="display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;background:#f0fdf4;color:${c}">${escHtml(lv.leave_name)}</span>`;
+    });
     return `<tr>
       <td style="font-family:'DM Mono',monospace;font-size:12px;white-space:nowrap">${dt}</td>
       <td style="font-weight:600">${escHtml(r.staff_name||'')}</td>
       <td style="color:var(--muted);font-size:12px">${escHtml(r.staff_role||'')}</td>
       <td><span style="color:${PUNCH_COLOR[r.punch_type]||'var(--text)'};font-weight:600;font-size:12px">${PUNCH_LABEL[r.punch_type]||r.punch_type}</span></td>
+      <td style="white-space:nowrap">${dayHtml || '<span style="color:var(--muted);font-size:11px">一般</span>'}</td>
       <td style="color:var(--muted);font-size:12px">${escHtml(r.note||'')}</td>
       <td>${r.is_manual ? `<span class="punch-manual-badge">補打 ${escHtml(r.manual_by||'')}</span>` : ''}</td>
       <td style="white-space:nowrap">
@@ -5719,12 +5753,44 @@ async function openSalDetail(id) {
       </div>
     </div>`;
   }
+  // ── 假別明細區塊 ──────────────────────────────────────────────
+  let leaveDetailBlock = '';
+  if (data.leave_details && data.leave_details.length) {
+    const PAY_COLOR = {'全薪':'var(--green)','半薪':'var(--accent)','無薪':'var(--red)'};
+    leaveDetailBlock = `<div style="margin-top:10px">
+      <div style="font-size:11px;font-weight:700;color:#8b5cf6;margin-bottom:6px">請假明細</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <tr style="background:var(--bg)">
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)">假別</th>
+          <th style="padding:5px 8px;text-align:center;border-bottom:1px solid var(--border)">天數</th>
+          <th style="padding:5px 8px;text-align:center;border-bottom:1px solid var(--border)">薪資</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)">區間</th>
+        </tr>
+        ${data.leave_details.map(lv=>`<tr style="border-bottom:1px solid #f0f2f8">
+          <td style="padding:4px 8px;font-weight:600">${escHtml(lv.leave_name)}</td>
+          <td style="padding:4px 8px;text-align:center;font-family:'DM Mono',monospace">${lv.days}</td>
+          <td style="padding:4px 8px;text-align:center;font-weight:600;color:${PAY_COLOR[lv.pay_label]||'var(--text)'}">${escHtml(lv.pay_label)}</td>
+          <td style="padding:4px 8px;color:var(--muted);font-size:11px">${lv.start_date}${lv.start_date!==lv.end_date?' ～ '+lv.end_date:''}</td>
+        </tr>`).join('')}
+      </table>
+    </div>`;
+  }
+  // ── 國定假日區塊 ───────────────────────────────────────────────
+  let holidayBlock = '';
+  if (data.holiday_dates && data.holiday_dates.length) {
+    holidayBlock = `<div style="margin-top:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">本月國定假日（${data.holiday_dates.length} 天）</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px 12px">
+        ${data.holiday_dates.map(h=>`<span style="font-size:11px;color:var(--muted)"><span style="font-family:'DM Mono',monospace">${h.date.slice(5)}</span> ${escHtml(h.name)}</span>`).join('')}
+      </div>
+    </div>`;
+  }
   const leaveInfo = `<div style="font-size:12px;color:var(--muted);margin-top:4px">
     ${isHourly
       ? `時薪制：實際工時 <strong>${data.actual_work_hours}h</strong> × 時薪 <strong>$${fmtNum(data.hourly_rate)}</strong> = <strong style="color:var(--green)">$${fmtNum(data.hourly_base_pay)}</strong>`
       : `月薪制：出勤 <strong>${data.actual_days}</strong> 天 / 應出勤 <strong>${data.work_days}</strong> 天${(data.absent_days||0)>0?' <span style="color:var(--red);font-size:11px">（缺勤 '+data.absent_days+' 天已扣款）</span>':''}`}
     ${data.ot_pay>0?` &nbsp;|&nbsp; 加班費 <strong style="color:var(--green)">+$${fmtNum(data.ot_pay)}</strong>`:''}
-  </div>${formulaBlock}${hourlyTable}`;
+  </div>${formulaBlock}${leaveDetailBlock}${holidayBlock}${hourlyTable}`;
   let html = `<div style="padding:16px 24px;background:var(--bg);border-bottom:1px solid var(--border)">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px">
       <div><span style="color:var(--muted)">職員代碼：</span><strong>${escHtml(data.employee_code||'—')}</strong></div>

@@ -216,14 +216,14 @@ html,body{min-height:100%;background:var(--navy);font-family:"Noto Sans TC",sans
           <div class="section-label" style="margin-bottom:12px">補打卡申請</div>
           <div style="margin-bottom:10px">
             <div class="fl">打卡類型</div>
-            <select class="fi" id="req-type" style="margin-bottom:8px">
+            <select class="fi" id="req-type" style="margin-bottom:0">
               <option value="in">上班打卡</option><option value="out">下班打卡</option>
               <option value="break_out">休息開始</option><option value="break_in">休息結束</option>
             </select>
           </div>
           <div style="margin-bottom:10px">
             <div class="fl">補打時間</div>
-            <input class="fi" type="datetime-local" id="req-time" style="margin-bottom:8px">
+            <input class="fi" type="datetime-local" id="req-time" style="margin-bottom:0">
           </div>
           <div style="margin-bottom:14px">
             <div class="fl">原因 *</div>
@@ -293,7 +293,7 @@ html,body{min-height:100%;background:var(--navy);font-family:"Noto Sans TC",sans
       <div id="panel-overtime" class="tab-body" style="display:none">
         <div style="background:#fff;border-radius:10px;border:1.5px solid var(--border);padding:16px;margin-bottom:16px">
           <div class="section-label" style="margin-bottom:12px">新增加班申請</div>
-          <div style="margin-bottom:10px"><div class="fl">加班日期</div><input class="fi" type="date" id="ot-date" style="margin-bottom:8px"></div>
+          <div style="margin-bottom:10px"><div class="fl">加班日期</div><input class="fi" type="date" id="ot-date" style="margin-bottom:0"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
             <div><div class="fl">開始時間</div><input class="fi" type="time" id="ot-start" style="margin-bottom:0"></div>
             <div><div class="fl">結束時間</div><input class="fi" type="time" id="ot-end" style="margin-bottom:0"></div>
@@ -356,9 +356,9 @@ html,body{min-height:100%;background:var(--navy);font-family:"Noto Sans TC",sans
           </div>
           <!-- 小時模式（病假 / 事假） -->
           <div id="leave-hour-section" style="display:none">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-              <div><div class="fl">請假日期 *</div><input class="fi" type="date" id="leave-hour-date" style="margin-bottom:0" onchange="previewLeaveStaff()"></div>
-              <div></div>
+            <div style="margin-bottom:10px">
+              <div class="fl">請假日期 *</div>
+              <input class="fi" type="date" id="leave-hour-date" style="margin-bottom:0" onchange="previewLeaveStaff()">
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
               <div><div class="fl">開始時間 *</div><input class="fi" type="time" id="leave-hour-start" value="09:00" style="margin-bottom:0" onchange="previewLeaveStaff()"></div>
@@ -443,11 +443,11 @@ html,body{min-height:100%;background:var(--navy);font-family:"Noto Sans TC",sans
           <div style="padding:12px 16px">
             <div style="margin-bottom:10px">
               <div class="fl">費用日期</div>
-              <input class="fi" type="date" id="exp-date" style="margin-bottom:8px">
+              <input class="fi" type="date" id="exp-date" style="margin-bottom:0">
             </div>
             <div style="margin-bottom:10px">
               <div class="fl">費用類型</div>
-              <select class="fi" id="exp-category" style="margin-bottom:8px">
+              <select class="fi" id="exp-category" style="margin-bottom:0">
                 <option value="餐費">餐費</option>
                 <option value="交通費">交通費</option>
                 <option value="住宿費">住宿費</option>
@@ -457,11 +457,11 @@ html,body{min-height:100%;background:var(--navy);font-family:"Noto Sans TC",sans
             </div>
             <div style="margin-bottom:10px">
               <div class="fl">金額（元）</div>
-              <input class="fi" type="number" id="exp-amount" placeholder="0" min="0" style="margin-bottom:8px">
+              <input class="fi" type="number" id="exp-amount" placeholder="0" min="0" style="margin-bottom:0">
             </div>
             <div style="margin-bottom:10px">
               <div class="fl">說明</div>
-              <input class="fi" type="text" id="exp-note" placeholder="費用說明（選填）" style="margin-bottom:8px">
+              <input class="fi" type="text" id="exp-note" placeholder="費用說明（選填）" style="margin-bottom:0">
             </div>
             <!-- 發票/收據上傳 -->
             <div style="margin-bottom:14px">
@@ -1156,7 +1156,7 @@ async function loadAttendance(){
   cal.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:24px">載入中...</div>';
   await _loadHolidaysForMonth(month);
 
-  let records = {};
+  let records = {}, _leaveByDate = {};
   try {
     const res  = await fetch('/api/punch/my-records?month=' + month + '&_=' + Date.now());
     const data = await res.json();
@@ -1172,15 +1172,30 @@ async function loadAttendance(){
       throw new Error(data.error || '載入失敗');
     }
     records = data.records || {};
+    _leaveByDate = data.leaves || {};
+    window._attShifts = data.shifts || {};
   } catch(e) {
     cal.innerHTML = `<div style="text-align:center;color:var(--red);font-size:13px;padding:24px">${esc(e.message)}</div>`;
     return;
   }
 
   _attRecords = records;
+  window._attLeaves = _leaveByDate;
   const [y, m] = month.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
   const today = new Date(); today.setHours(0,0,0,0);
+
+  // 依排班夾住打卡時間：回傳 {effIn, effOut} 分鐘數，無排班則原樣
+  function clampToShift(ds, inMins, outMins) {
+    const sh = (window._attShifts || {})[ds];
+    if (!sh) return { effIn: inMins, effOut: outMins };
+    const [sh_h, sh_m] = sh.start.split(':').map(Number);
+    const [se_h, se_m] = sh.end.split(':').map(Number);
+    const shiftStart = sh_h * 60 + sh_m;
+    let   shiftEnd   = se_h * 60 + se_m;
+    if (sh.cross_midnight) shiftEnd += 24 * 60;
+    return { effIn: Math.max(inMins, shiftStart), effOut: Math.min(outMins, shiftEnd) };
+  }
 
   // ── 統計摘要 ──────────────────────────────────────────────
   let totalIn = 0, totalHours = 0, lateCount = 0;
@@ -1194,8 +1209,23 @@ async function loadAttendance(){
       if (inRec && outRec) {
         const [ih, im] = inRec.time.split(':').map(Number);
         const [oh, om] = outRec.time.split(':').map(Number);
-        const mins = (oh * 60 + om) - (ih * 60 + im);
-        if (mins > 0) totalHours += mins / 60;
+        const { effIn, effOut } = clampToShift(ds, ih*60+im, oh*60+om);
+        const gross = effOut - effIn;
+        if (gross > 0) {
+          // 勞基法第35條：>=4小時至少休息30分鐘
+          const bouts = recs.filter(r => r.type === 'break_out');
+          const bins  = recs.filter(r => r.type === 'break_in');
+          let brk = 0;
+          bouts.forEach(bo => {
+            const bm = bo.time.split(':').map(Number);
+            const boM = bm[0]*60+bm[1];
+            const matched = bins.filter(bi => { const x=bi.time.split(':').map(Number); return x[0]*60+x[1]>boM; });
+            if (matched.length) { const x=matched[0].time.split(':').map(Number); brk += (x[0]*60+x[1])-boM; }
+          });
+          if (gross >= 540) brk = Math.max(brk, 60);
+          else if (gross >= 240) brk = Math.max(brk, 30);
+          totalHours += Math.max(0, gross - brk) / 60;
+        }
       }
     }
   }
@@ -1289,8 +1319,12 @@ async function loadAttendance(){
         ${day}${isToday?'<span style="font-size:8px;color:var(--accent)"> 今</span>':''}
       </div>
       ${holidayName ? `<div style="font-size:8px;font-weight:700;color:var(--red);line-height:1.3;margin-top:1px;text-align:center">${esc(holidayName)}</div>` : ''}
+      ${(_leaveByDate[ds]||[]).map(lv=>{
+        const c=lv.pay_label==='全薪'?'#16a34a':lv.pay_label==='無薪'?'#dc2626':'#7c3aed';
+        return `<div style="font-size:7px;font-weight:700;color:${c};line-height:1.4;margin-top:1px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(lv.leave_name)}</div>`;
+      }).join('')}
       ${timeStr}
-      ${recs.length===0 && !isFuture && wd!==0
+      ${recs.length===0 && !(_leaveByDate[ds]||[]).length && !isFuture && wd!==0
         ? '<div style="font-size:9px;color:#d0d4de;margin-top:4px;text-align:center">—</div>'
         : ''}
     </div>`;
@@ -1329,11 +1363,25 @@ function showDayDetail(ds) {
     if (inRec && outRec) {
       const [ih, im] = inRec.time.split(':').map(Number);
       const [oh, om] = outRec.time.split(':').map(Number);
-      const mins = (oh*60+om) - (ih*60+im);
-      if (mins > 0) {
+      const { effIn, effOut } = clampToShift(ds, ih*60+im, oh*60+om);
+      const gross = effOut - effIn;
+      if (gross > 0) {
+        // 勞基法第35條：>=4小時至少休息30分鐘
+        const bouts = recs.filter(r => r.type === 'break_out');
+        const bins  = recs.filter(r => r.type === 'break_in');
+        let brk = 0;
+        bouts.forEach(bo => {
+          const bm = bo.time.split(':').map(Number);
+          const boM = bm[0]*60+bm[1];
+          const matched = bins.filter(bi => { const x=bi.time.split(':').map(Number); return x[0]*60+x[1]>boM; });
+          if (matched.length) { const x=matched[0].time.split(':').map(Number); brk += (x[0]*60+x[1])-boM; }
+        });
+        if (gross >= 540) brk = Math.max(brk, 60);
+        else if (gross >= 240) brk = Math.max(brk, 30);
+        const mins = Math.max(0, gross - brk);
         const h = Math.floor(mins/60), mn = mins%60;
         workHoursStr = `<div style="font-size:12px;color:var(--green);font-weight:700;margin-bottom:12px;padding:8px 12px;background:#f0fdf4;border-radius:8px">
-          ⏱ 工時：${h}小時${mn>0?mn+'分':''}（${inRec.time} ～ ${outRec.time}）</div>`;
+          工時：${h}小時${mn>0?mn+'分':''}（${inRec.time} ～ ${outRec.time}）</div>`;
       }
     }
     rowsHtml = workHoursStr + recs.map(r => `
@@ -1346,6 +1394,22 @@ function showDayDetail(ds) {
         </div>
         <div style="font-family:'DM Mono',monospace;font-size:18px;font-weight:700;color:var(--navy)">${r.time}</div>
       </div>`).join('');
+  }
+
+  // 假日 / 假別 banner
+  const _hn = (_holidayMap && _holidayMap[ds]) || '';
+  const _lv = (window._attLeaves && window._attLeaves[ds]) || [];
+  let bannerHtml = '';
+  if (_hn) {
+    bannerHtml += `<div style="padding:8px 20px;background:#fff5f5;border-bottom:1px solid #fecaca;font-size:12px;font-weight:700;color:var(--red)">${esc(_hn)}</div>`;
+  }
+  if (_lv.length) {
+    const lvTags = _lv.map(lv=>{
+      const c=lv.pay_label==='全薪'?'#16a34a':lv.pay_label==='無薪'?'#dc2626':'#7c3aed';
+      const bg=lv.pay_label==='全薪'?'#f0fdf4':lv.pay_label==='無薪'?'#fff5f5':'#f5f3ff';
+      return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;background:${bg};color:${c};font-weight:700;font-size:12px">${esc(lv.leave_name)} <span style="font-size:10px;opacity:.8">${esc(lv.pay_label)}</span></span>`;
+    }).join(' ');
+    bannerHtml += `<div style="padding:8px 20px;background:#faf5ff;border-bottom:1px solid #e9d5ff;display:flex;flex-wrap:wrap;gap:6px;align-items:center">${lvTags}</div>`;
   }
 
   overlay.innerHTML = `
@@ -1361,6 +1425,7 @@ function showDayDetail(ds) {
           style="width:28px;height:28px;border:none;background:var(--bg);border-radius:50%;
                  font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
       </div>
+      ${bannerHtml}
       <div style="padding:14px 20px">${rowsHtml}</div>
     </div>`;
 
@@ -2135,6 +2200,42 @@ function renderPayslip(data, wrap) {
           </tr>
         </tbody>
       </table>
+    </div>
+  </div>` : ''}
+
+  ${data.leave_details && data.leave_details.length ? `
+  <!-- 請假明細 -->
+  <div style="background:#fff;border-radius:12px;border:1.5px solid var(--border);overflow:hidden;margin-bottom:14px">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:#8b5cf6">請假明細</div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:var(--bg)">
+          <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">假別</th>
+          <th style="padding:8px 12px;text-align:center;border-bottom:1px solid var(--border)">天數</th>
+          <th style="padding:8px 12px;text-align:center;border-bottom:1px solid var(--border)">薪資</th>
+          <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)">區間</th>
+        </tr></thead>
+        <tbody>
+          ${data.leave_details.map(lv => {
+            const pc = lv.pay_label==='全薪'?'var(--green)':lv.pay_label==='無薪'?'var(--red)':'var(--accent)';
+            return `<tr style="border-bottom:1px solid #f0f2f8">
+              <td style="padding:6px 12px;font-weight:600">${esc(lv.leave_name)}</td>
+              <td style="padding:6px 12px;text-align:center;font-family:'DM Mono',monospace">${lv.days}</td>
+              <td style="padding:6px 12px;text-align:center;font-weight:700;color:${pc}">${esc(lv.pay_label)}</td>
+              <td style="padding:6px 12px;color:var(--muted)">${lv.start_date}${lv.start_date!==lv.end_date?' ～ '+lv.end_date:''}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>` : ''}
+
+  ${data.holiday_dates && data.holiday_dates.length ? `
+  <!-- 國定假日 -->
+  <div style="background:#fff;border-radius:12px;border:1.5px solid var(--border);overflow:hidden;margin-bottom:14px">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--red)">本月國定假日（${data.holiday_dates.length} 天）</div>
+    <div style="padding:10px 16px;display:flex;flex-wrap:wrap;gap:6px 16px">
+      ${data.holiday_dates.map(h=>`<span style="font-size:12px;color:var(--muted)"><span style="font-family:'DM Mono',monospace;color:var(--red)">${h.date.slice(5)}</span> ${esc(h.name)}</span>`).join('')}
     </div>
   </div>` : ''}`;
 
