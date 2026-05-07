@@ -235,8 +235,37 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
              box-shadow:0 8px 32px rgba(0,0,0,0.15);z-index:2000;max-height:320px;overflow-y:auto"></div>
       </div>
       <span style="font-size:12px;color:var(--muted)" id="topbar-admin-name"></span>
+      <button class="btn btn-outline btn-sm" onclick="openAdminSelfPwModal()" style="font-size:12px;padding:4px 10px">修改密碼</button>
     </div>
   </header>
+
+  <!-- ── 管理員自行修改密碼 Modal ── -->
+  <div class="modal-overlay" id="admin-self-pw-modal" style="display:none" onclick="if(event.target===this)closeAdminSelfPwModal()">
+    <div class="modal-box" style="max-width:360px">
+      <div class="modal-header">
+        <span class="modal-title">修改我的密碼</span>
+        <button class="modal-close" onclick="closeAdminSelfPwModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom:12px">
+          <label class="form-label">舊密碼</label>
+          <input class="form-input" type="password" id="asp-old" placeholder="請輸入現有密碼" autocomplete="current-password">
+        </div>
+        <div style="margin-bottom:12px">
+          <label class="form-label">新密碼</label>
+          <input class="form-input" type="password" id="asp-new" placeholder="至少 4 個字元" autocomplete="new-password">
+        </div>
+        <div>
+          <label class="form-label">確認新密碼</label>
+          <input class="form-input" type="password" id="asp-new2" placeholder="再輸入一次" autocomplete="new-password">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeAdminSelfPwModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveAdminSelfPw()">確認修改</button>
+      </div>
+    </div>
+  </div>
 
 
   <!-- ── 儀表板 ── -->
@@ -1579,8 +1608,8 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
     <div class="card">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>帳號</th><th>顯示名稱</th><th>可用模組</th><th>類型</th><th>上次登入</th><th>狀態</th><th>操作</th></tr></thead>
-          <tbody id="adminacc-tbody"><tr><td colspan="7" class="empty-state"><div class="empty-state-text">載入中...</div></td></tr></tbody>
+          <thead><tr><th>帳號</th><th>顯示名稱</th><th>密碼</th><th>可用模組</th><th>類型</th><th>上次登入</th><th>狀態</th><th>操作</th></tr></thead>
+          <tbody id="adminacc-tbody"><tr><td colspan="8" class="empty-state"><div class="empty-state-text">載入中...</div></td></tr></tbody>
         </table>
       </div>
     </div>
@@ -8297,7 +8326,7 @@ async function loadAdminAccounts() {
   adminAccList = ok ? data : [];
   const tb = document.getElementById('adminacc-tbody');
   if (!adminAccList.length) {
-    tb.innerHTML = '<tr><td colspan="7" class="empty-state"><div class="empty-state-text">尚無帳號</div></td></tr>'; return;
+    tb.innerHTML = '<tr><td colspan="8" class="empty-state"><div class="empty-state-text">尚無帳號</div></td></tr>'; return;
   }
   tb.innerHTML = adminAccList.map(a => {
     const modLabels = a.is_super
@@ -8310,9 +8339,13 @@ async function loadAdminAccounts() {
       ? '<span class="badge" style="background:rgba(74,123,218,0.15);color:var(--accent)">超級管理員</span>'
       : '<span class="badge badge-ok" style="opacity:.7">一般管理員</span>';
     const lastLogin = a.last_login_at ? new Date(a.last_login_at).toLocaleString('zh-TW',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    const pwCell = a.password_plain
+      ? `<span style="font-family:'DM Mono',monospace;font-size:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 8px;user-select:all">${escHtml(a.password_plain)}</span>`
+      : '<span style="color:var(--muted);font-size:12px">—</span>';
     return `<tr>
       <td style="font-family:'DM Mono',monospace;font-weight:600">${escHtml(a.username)}</td>
       <td>${escHtml(a.display_name||'')}</td>
+      <td>${pwCell}</td>
       <td style="line-height:1.8">${modLabels}</td>
       <td>${typeLabel}</td>
       <td style="font-size:12px;color:var(--muted)">${lastLogin}</td>
@@ -8366,6 +8399,21 @@ function toggleAamPwVisible() {
   else { inp.type = 'password'; btn.textContent = '顯示'; }
 }
 function closeAdminAccModal() { document.getElementById('adminacc-modal').style.display = 'none'; }
+function openAdminSelfPwModal() {
+  ['asp-old','asp-new','asp-new2'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('admin-self-pw-modal').style.display = 'flex';
+}
+function closeAdminSelfPwModal() { document.getElementById('admin-self-pw-modal').style.display = 'none'; }
+async function saveAdminSelfPw() {
+  const oldPw  = document.getElementById('asp-old').value;
+  const newPw  = document.getElementById('asp-new').value;
+  const newPw2 = document.getElementById('asp-new2').value;
+  if (!oldPw || !newPw) { showToast('請填寫舊密碼與新密碼','error'); return; }
+  if (newPw !== newPw2) { showToast('兩次新密碼不一致','error'); return; }
+  const { ok } = await api('/api/admin/change_password', { method:'POST', body: JSON.stringify({ old_password: oldPw, new_password: newPw }) });
+  if (!ok) return;
+  closeAdminSelfPwModal(); showToast('密碼已修改','success');
+}
 async function saveAdminAcc() {
   const id       = document.getElementById('aam-id').value;
   const username = document.getElementById('aam-username').value.trim();

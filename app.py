@@ -523,6 +523,29 @@ def admin_logout():
     session.clear()
     return redirect(url_for('admin_login'))
 
+@app.route('/api/admin/change_password', methods=['POST'])
+@login_required
+def api_admin_change_password():
+    aid = session.get('admin_id')
+    b = request.get_json(force=True)
+    old_pw = b.get('old_password', '').strip()
+    new_pw = b.get('new_password', '').strip()
+    if not old_pw or not new_pw:
+        return jsonify({'error': '請填寫舊密碼與新密碼'}), 400
+    if len(new_pw) < 4:
+        return jsonify({'error': '新密碼至少 4 個字元'}), 400
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM admin_accounts WHERE id=%s AND active=TRUE", (aid,)
+        ).fetchone()
+        if not row or row['password_hash'] != _hash_pw(old_pw):
+            return jsonify({'error': '舊密碼錯誤'}), 400
+        conn.execute(
+            "UPDATE admin_accounts SET password_hash=%s, password_plain=%s WHERE id=%s",
+            (_hash_pw(new_pw), new_pw, aid)
+        )
+    return jsonify({'ok': True})
+
 @app.route('/admin')
 @app.route('/admin/')
 @login_required
@@ -773,6 +796,30 @@ def api_punch_login():
 def api_punch_logout():
     session.pop('punch_staff_id', None)
     session.pop('punch_staff_name', None)
+    return jsonify({'ok': True})
+
+@app.route('/api/punch/change_password', methods=['POST'])
+def api_punch_change_password():
+    sid = session.get('punch_staff_id')
+    if not sid:
+        return jsonify({'error': '尚未登入'}), 401
+    b = request.get_json(force=True)
+    old_pw = b.get('old_password', '').strip()
+    new_pw = b.get('new_password', '').strip()
+    if not old_pw or not new_pw:
+        return jsonify({'error': '請填寫舊密碼與新密碼'}), 400
+    if len(new_pw) < 4:
+        return jsonify({'error': '新密碼至少 4 個字元'}), 400
+    with get_db() as conn:
+        staff = conn.execute(
+            "SELECT * FROM punch_staff WHERE id=%s AND active=TRUE", (sid,)
+        ).fetchone()
+        if not staff or staff['password_hash'] != _hash_pw(old_pw):
+            return jsonify({'error': '舊密碼錯誤'}), 400
+        conn.execute(
+            "UPDATE punch_staff SET password_hash=%s, password_plain=%s WHERE id=%s",
+            (_hash_pw(new_pw), new_pw, sid)
+        )
     return jsonify({'ok': True})
 
 @app.route('/api/punch/me', methods=['GET'])

@@ -174,7 +174,10 @@ html,body{min-height:100%;background:var(--navy);font-family:"Noto Sans TC",sans
           <div class="user-name" id="user-name"></div>
           <div class="user-role" id="user-role"></div>
         </div>
-        <button class="logout-btn" onclick="doLogout()">登出</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="logout-btn" onclick="openStaffPwModal()" style="color:rgba(255,255,255,.55)">改密碼</button>
+          <button class="logout-btn" onclick="doLogout()">登出</button>
+        </div>
       </div>
       <div class="tab-bar">
         <button class="tab" id="tab-ann" onclick="switchTab('ann')" style="position:relative">
@@ -2563,6 +2566,53 @@ async function deleteBioCred(credId){
 function escHtml(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+function openStaffPwModal() {
+  ['spm-old','spm-new','spm-new2'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('staff-pw-modal').style.display = 'flex';
+}
+function closeStaffPwModal() { document.getElementById('staff-pw-modal').style.display = 'none'; }
+async function saveStaffPw() {
+  const oldPw  = document.getElementById('spm-old').value;
+  const newPw  = document.getElementById('spm-new').value;
+  const newPw2 = document.getElementById('spm-new2').value;
+  if (!oldPw || !newPw) { alert('請填寫舊密碼與新密碼'); return; }
+  if (newPw !== newPw2) { alert('兩次新密碼不一致'); return; }
+  const r = await fetch('/api/punch/change_password', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ old_password: oldPw, new_password: newPw })
+  });
+  const d = await r.json();
+  if (!r.ok) { alert(d.error || '修改失敗'); return; }
+  closeStaffPwModal();
+  alert('密碼已修改成功');
+}
 </script>
+
+<!-- 員工修改密碼 Modal -->
+<div id="staff-pw-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px;width:92%;max-width:340px;box-shadow:0 12px 40px rgba(0,0,0,.18)">
+    <div style="font-size:16px;font-weight:700;margin-bottom:20px">修改密碼</div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;color:#666;margin-bottom:4px">舊密碼</div>
+      <input id="spm-old" type="password" placeholder="請輸入現有密碼" autocomplete="current-password"
+             style="width:100%;padding:10px 12px;border:1px solid #d0d5dd;border-radius:8px;font-size:14px;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:12px;color:#666;margin-bottom:4px">新密碼</div>
+      <input id="spm-new" type="password" placeholder="至少 4 個字元" autocomplete="new-password"
+             style="width:100%;padding:10px 12px;border:1px solid #d0d5dd;border-radius:8px;font-size:14px;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;color:#666;margin-bottom:4px">確認新密碼</div>
+      <input id="spm-new2" type="password" placeholder="再輸入一次" autocomplete="new-password"
+             style="width:100%;padding:10px 12px;border:1px solid #d0d5dd;border-radius:8px;font-size:14px;box-sizing:border-box">
+    </div>
+    <div style="display:flex;gap:10px">
+      <button onclick="closeStaffPwModal()" style="flex:1;padding:10px;border:1px solid #d0d5dd;border-radius:8px;background:#fff;font-size:14px;cursor:pointer">取消</button>
+      <button onclick="saveStaffPw()" style="flex:1;padding:10px;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:14px;font-weight:600;cursor:pointer">確認修改</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
