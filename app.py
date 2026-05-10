@@ -415,6 +415,8 @@ def _run_annual_leave_sync():
 
 def _annual_leave_sync_loop():
     import time as _time_sync
+    # 等待模組完全載入後再執行
+    _time_sync.sleep(10)
     # 啟動時立即執行一次
     _run_annual_leave_sync()
     while True:
@@ -837,6 +839,32 @@ def api_punch_me():
     return jsonify(dict(staff))
 
 # ── GPS Settings ──────────────────────────────────────────────────
+
+@app.route('/api/punch/change-password', methods=['POST'])
+def api_punch_change_password():
+    sid = session.get('punch_staff_id')
+    if not sid:
+        return jsonify({'error': '請先登入'}), 401
+    b = request.get_json(force=True)
+    old_pw  = (b.get('old_password') or '').strip()
+    new_pw  = (b.get('new_password') or '').strip()
+    if not old_pw or not new_pw:
+        return jsonify({'error': '請填寫舊密碼與新密碼'}), 400
+    if len(new_pw) < 4:
+        return jsonify({'error': '新密碼至少 4 個字元'}), 400
+    with get_db() as conn:
+        staff = conn.execute(
+            "SELECT id, password_hash FROM punch_staff WHERE id=%s AND active=TRUE", (sid,)
+        ).fetchone()
+        if not staff:
+            return jsonify({'error': '帳號不存在'}), 404
+        if staff['password_hash'] != _hash_pw(old_pw):
+            return jsonify({'error': '舊密碼錯誤'}), 400
+        conn.execute(
+            "UPDATE punch_staff SET password_hash=%s, password_plain=%s WHERE id=%s",
+            (_hash_pw(new_pw), new_pw, sid)
+        )
+    return jsonify({'ok': True})
 
 @app.route('/api/punch/settings', methods=['GET'])
 def api_punch_settings_get():
@@ -5046,11 +5074,14 @@ def api_salary_generate():
     b     = request.get_json(force=True)
     month = b.get('month', '').strip()
     if not month: return jsonify({'error': '請指定月份'}), 400
+    try:
+        year2, mo2 = map(int, month.split('-'))
+    except (ValueError, AttributeError):
+        return jsonify({'error': '月份格式錯誤，請使用 YYYY-MM'}), 400
 
     # 計算發薪日：薪資月份的下一個月的 pay_day
     cfg = _get_salary_config()
     pay_day = cfg['pay_day']
-    year2, mo2 = int(month.split('-')[0]), int(month.split('-')[1])
     pay_year, pay_mo = (year2, mo2 + 1) if mo2 < 12 else (year2 + 1, 1)
     effective_pay_day = min(pay_day, _cal2.monthrange(pay_year, pay_mo)[1])
     pay_date_str = _d2(pay_year, pay_mo, effective_pay_day).isoformat()
