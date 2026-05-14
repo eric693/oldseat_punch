@@ -441,7 +441,7 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
       <button class="inv-tab"        id="punchtab-overtime" onclick="switchPunchTab('overtime')">加班申請<span class="tab-badge" id="tabdot-overtime" style="display:none"></span></button>
       <button class="inv-tab"        id="punchtab-staff"    onclick="switchPunchTab('staff')">員工管理</button>
       <button class="inv-tab"        id="punchtab-resigned"  onclick="switchPunchTab('resigned')">離職員工</button>
-      <button class="inv-tab"        id="punchtab-gps"      onclick="switchPunchTab('gps')">GPS 設定</button>
+      <button class="inv-tab"        id="punchtab-gps"      onclick="switchPunchTab('gps')">打卡驗證</button>
       <button class="inv-tab"        id="punchtab-line"     onclick="switchPunchTab('line')">LINE 打卡</button>
     </div>
 
@@ -628,26 +628,55 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
       </div>
     </div>
 
-    <!-- GPS 設定 -->
+    <!-- 打卡驗證設定 -->
     <div id="punch-panel-gps" style="display:none">
       <div class="filter-bar" style="margin-bottom:20px;gap:14px;flex-wrap:wrap">
-        <span class="filter-label">GPS 驗證模式</span>
-        <select class="filter-input" id="gps-required" onchange="saveGpsConfig()" style="min-width:220px">
-          <option value="0">不強制（記錄距離但不阻擋打卡）</option>
-          <option value="1">強制（超出所有地點範圍則禁止打卡）</option>
+        <span class="filter-label">打卡驗證方式</span>
+        <select class="filter-input" id="punch-mode" onchange="savePunchMode()" style="min-width:260px">
+          <option value="none">不驗證（直接打卡，僅記錄）</option>
+          <option value="gps">GPS 驗證（需在指定地點範圍內）</option>
+          <option value="wifi">WiFi 驗證（需連接指定 WiFi）</option>
+          <option value="either">GPS 或 WiFi（任一符合即可）</option>
         </select>
         <span style="font-size:12px;color:var(--muted)">變更後自動儲存</span>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-        <span id="gps-loc-count" style="font-size:13px;color:var(--muted)">載入中...</span>
-        <button class="btn btn-primary" onclick="openLocModal()">新增地點</button>
+
+      <!-- GPS 地點 -->
+      <div id="gps-section">
+        <div class="card" style="padding:16px 20px;margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+            <span style="font-weight:700;color:var(--navy)">GPS 打卡地點</span>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span id="gps-loc-count" style="font-size:13px;color:var(--muted)">載入中...</span>
+              <button class="btn btn-primary btn-sm" onclick="openLocModal()">新增地點</button>
+            </div>
+          </div>
+          <div id="gps-loc-list"></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:12px;line-height:2;border-top:1px solid var(--border);padding-top:10px">
+            <strong style="color:var(--text)">如何取得 GPS 座標：</strong><br>
+            1. 在新增/編輯地點視窗中點擊「取得目前位置」，瀏覽器自動填入<br>
+            2. 或至 Google Maps 找到地點，右鍵點擊地圖 → 座標顯示在選單第一行
+          </div>
+        </div>
       </div>
-      <div id="gps-loc-list" style="margin-bottom:20px"></div>
-      <div class="card" style="padding:16px 20px;background:var(--bg)">
-        <div style="font-size:12px;color:var(--muted);line-height:2">
-          <strong style="color:var(--text)">如何取得 GPS 座標：</strong><br>
-          1. 在新增/編輯地點視窗中點擊「取得目前位置」，瀏覽器自動填入<br>
-          2. 或至 Google Maps 找到地點，右鍵點擊地圖 → 座標顯示在選單第一行
+
+      <!-- WiFi 網路 -->
+      <div id="wifi-section">
+        <div class="card" style="padding:16px 20px;margin-bottom:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+            <span style="font-weight:700;color:var(--navy)">WiFi 打卡網路</span>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span id="wifi-net-count" style="font-size:13px;color:var(--muted)">載入中...</span>
+              <button class="btn btn-primary btn-sm" onclick="openWifiModal()">新增網路</button>
+            </div>
+          </div>
+          <div id="wifi-net-list"></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:12px;line-height:2;border-top:1px solid var(--border);padding-top:10px">
+            <strong style="color:var(--text)">允許 IP 填寫說明：</strong><br>
+            • 填入辦公室對外 IP，例如：<code>203.69.10.5</code><br>
+            • 或填入 LAN 子網段，例如：<code>192.168.1.0/24</code><br>
+            • 多個 IP 請以逗號分隔，例如：<code>203.69.10.5, 192.168.0.0/24</code>
+          </div>
         </div>
       </div>
     </div>
@@ -2110,6 +2139,31 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
       <div style="margin-top:14px"><button class="btn btn-outline btn-sm" onclick="getLocGPS()">取得目前位置</button><span id="glm-gps-msg" style="font-size:12px;color:var(--muted);margin-left:10px"></span></div>
     </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeLocModal()">取消</button><button class="btn btn-primary" onclick="saveLocation()">儲存</button></div>
+  </div>
+</div>
+
+<!-- WiFi Network Modal -->
+<div class="modal-overlay" id="wifi-net-modal" style="display:none">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header"><span class="modal-title" id="wnm-title">新增 WiFi 網路</span><button class="modal-close" onclick="closeWifiModal()">&times;</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="wnm-id">
+      <div style="margin-bottom:14px"><label class="form-label">網路名稱 *</label><input class="form-input" id="wnm-name" placeholder="例：公司辦公室WiFi" style="width:100%"></div>
+      <div style="margin-bottom:14px">
+        <label class="form-label">允許的 IP / CIDR（逗號分隔）*</label>
+        <textarea class="form-input" id="wnm-ips" placeholder="例：203.69.10.5, 192.168.1.0/24" rows="3" style="width:100%;font-family:'DM Mono',monospace;font-size:12px;resize:vertical"></textarea>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">員工必須從此 IP 連線才能通過 WiFi 打卡驗證</div>
+      </div>
+      <div style="margin-bottom:10px">
+        <label class="form-label">狀態</label>
+        <select class="form-input" id="wnm-active"><option value="1">啟用</option><option value="0">停用</option></select>
+      </div>
+      <div style="padding:10px 12px;background:var(--bg);border-radius:6px;font-size:12px;color:var(--muted)">
+        目前連線 IP：<span id="wnm-current-ip" style="font-family:'DM Mono',monospace;color:var(--accent)">載入中...</span>
+        <button class="btn btn-outline btn-sm" style="margin-left:8px;padding:2px 8px;font-size:11px" onclick="fillCurrentIP()">填入</button>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeWifiModal()">取消</button><button class="btn btn-primary" onclick="saveWifiNetwork()">儲存</button></div>
   </div>
 </div>
 
@@ -4168,40 +4222,78 @@ async function deletePunchStaff(id) {
   showToast('已刪除', 'success'); await loadPunchStaff();
 }
 
-// ── GPS ────────────────────────────────────────────────────────
+// ── 打卡驗證設定 ──────────────────────────────────────────────
 let gpsLocList = [], editingLocId = null;
+let wifiNetList = [], editingWifiId = null;
 
 async function loadGpsSettings() {
   const { ok: ok1, data: s } = await api('/api/punch/settings', {}, true);
-  if (ok1) document.getElementById('gps-required').value = s.gps_required ? '1' : '0';
-  const { ok: ok2, data: locs } = await api('/api/punch/locations', {}, true);
-  gpsLocList = ok2 ? locs : [];
+  if (ok1) {
+    const mode = s.punch_mode || (s.gps_required ? 'gps' : 'none');
+    document.getElementById('punch-mode').value = mode;
+    updatePunchSectionVisibility(mode);
+  }
+  const [locRes, wifiRes] = await Promise.all([
+    api('/api/punch/locations', {}, true),
+    api('/api/punch/wifi-networks', {}, true),
+  ]);
+  gpsLocList  = locRes.ok  ? locRes.data  : [];
+  wifiNetList = wifiRes.ok ? wifiRes.data : [];
   renderLocList();
+  renderWifiList();
 }
-async function saveGpsConfig() {
-  const val = document.getElementById('gps-required').value === '1';
-  const { ok } = await api('/api/punch/config', apiPUT({ gps_required: val }));
-  if (ok) showToast(val ? 'GPS 驗證已開啟' : 'GPS 驗證已關閉', 'success');
+
+function updatePunchSectionVisibility(mode) {
+  const showGps  = mode === 'gps'  || mode === 'either';
+  const showWifi = mode === 'wifi' || mode === 'either';
+  document.getElementById('gps-section').style.display  = showGps  ? '' : 'none';
+  document.getElementById('wifi-section').style.display = showWifi ? '' : 'none';
 }
+
+async function savePunchMode() {
+  const mode = document.getElementById('punch-mode').value;
+  updatePunchSectionVisibility(mode);
+  const { ok } = await api('/api/punch/config', apiPUT({ punch_mode: mode }));
+  const labels = { none:'不驗證', gps:'GPS 驗證', wifi:'WiFi 驗證', either:'GPS 或 WiFi 驗證' };
+  if (ok) showToast(`已切換為：${labels[mode] || mode}`, 'success');
+}
+
 function renderLocList() {
   const wrap = document.getElementById('gps-loc-list');
   document.getElementById('gps-loc-count').textContent = `共 ${gpsLocList.length} 個打卡地點`;
-  if (!gpsLocList.length) { wrap.innerHTML = '<div class="card" style="padding:32px;text-align:center;color:var(--muted)">尚無打卡地點</div>'; return; }
+  if (!gpsLocList.length) { wrap.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted)">尚無 GPS 地點</div>'; return; }
   wrap.innerHTML = gpsLocList.map(loc => `
-    <div class="card" style="margin-bottom:12px">
-      <div class="card-header" style="flex-wrap:wrap;gap:10px">
-        <div>
-          <span class="card-title">${escHtml(loc.location_name)}</span>
-          <div style="font-size:12px;color:var(--muted);margin-top:3px;font-family:'DM Mono',monospace">${loc.lat}, ${loc.lng} &nbsp;|&nbsp; 範圍 ${loc.radius_m}m</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          ${loc.active ? '<span class="badge badge-ok">啟用中</span>' : '<span class="badge badge-warn">停用</span>'}
-          <button class="btn btn-outline btn-sm" onclick="openLocModal(${loc.id})">編輯</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteLocation(${loc.id})">刪除</button>
-        </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <span style="font-weight:600">${escHtml(loc.location_name)}</span>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;font-family:'DM Mono',monospace">${loc.lat}, ${loc.lng} | 範圍 ${loc.radius_m}m</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${loc.active ? '<span class="badge badge-ok">啟用</span>' : '<span class="badge badge-warn">停用</span>'}
+        <button class="btn btn-outline btn-sm" onclick="openLocModal(${loc.id})">編輯</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteLocation(${loc.id})">刪除</button>
       </div>
     </div>`).join('');
 }
+
+function renderWifiList() {
+  const wrap = document.getElementById('wifi-net-list');
+  document.getElementById('wifi-net-count').textContent = `共 ${wifiNetList.length} 個網路`;
+  if (!wifiNetList.length) { wrap.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted)">尚無 WiFi 網路</div>'; return; }
+  wrap.innerHTML = wifiNetList.map(net => `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <span style="font-weight:600">${escHtml(net.network_name)}</span>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;font-family:'DM Mono',monospace">${escHtml(net.allowed_ips || '（未設定 IP）')}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${net.active ? '<span class="badge badge-ok">啟用</span>' : '<span class="badge badge-warn">停用</span>'}
+        <button class="btn btn-outline btn-sm" onclick="openWifiModal(${net.id})">編輯</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteWifiNet(${net.id})">刪除</button>
+      </div>
+    </div>`).join('');
+}
+
 function openLocModal(id=null) {
   editingLocId = id;
   document.getElementById('glm-title').textContent = id ? '編輯打卡地點' : '新增打卡地點';
@@ -4251,6 +4343,51 @@ async function deleteLocation(id) {
   if (!confirm(`確定刪除地點「${loc ? loc.location_name : id}」？`)) return;
   await api(`/api/punch/locations/${id}`, { method: 'DELETE' });
   showToast('已刪除', 'success'); gpsLocList = gpsLocList.filter(x => x.id !== id); renderLocList();
+}
+
+// ── WiFi Networks ────────────────────────────────────────────
+async function openWifiModal(id=null) {
+  editingWifiId = id;
+  document.getElementById('wnm-title').textContent = id ? '編輯 WiFi 網路' : '新增 WiFi 網路';
+  if (id) {
+    const net = wifiNetList.find(x => x.id === id); if (!net) return;
+    document.getElementById('wnm-id').value     = net.id;
+    document.getElementById('wnm-name').value   = net.network_name;
+    document.getElementById('wnm-ips').value    = net.allowed_ips;
+    document.getElementById('wnm-active').value = net.active ? '1' : '0';
+  } else {
+    ['wnm-id','wnm-name','wnm-ips'].forEach(i => document.getElementById(i).value = '');
+    document.getElementById('wnm-active').value = '1';
+  }
+  // Load current IP
+  const { ok, data } = await api('/api/punch/wifi-check', {}, true);
+  document.getElementById('wnm-current-ip').textContent = ok !== undefined ? data.ip || '未知' : '未知';
+  document.getElementById('wifi-net-modal').style.display = 'flex';
+}
+function closeWifiModal() { document.getElementById('wifi-net-modal').style.display = 'none'; }
+function fillCurrentIP() {
+  const ip = document.getElementById('wnm-current-ip').textContent;
+  const cur = document.getElementById('wnm-ips').value.trim();
+  document.getElementById('wnm-ips').value = cur ? cur + ', ' + ip : ip;
+}
+async function saveWifiNetwork() {
+  const id   = document.getElementById('wnm-id').value;
+  const name = document.getElementById('wnm-name').value.trim();
+  const ips  = document.getElementById('wnm-ips').value.trim();
+  if (!name) { showToast('請填入網路名稱', 'error'); return; }
+  if (!ips)  { showToast('請填入允許的 IP', 'error'); return; }
+  const body = { network_name: name, allowed_ips: ips, active: document.getElementById('wnm-active').value === '1' };
+  const { ok } = await api(id ? `/api/punch/wifi-networks/${id}` : '/api/punch/wifi-networks', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+  if (!ok) return;
+  closeWifiModal(); showToast(id ? 'WiFi 網路已更新' : 'WiFi 網路已新增', 'success');
+  const { ok: ok2, data } = await api('/api/punch/wifi-networks', {}, true);
+  if (ok2) { wifiNetList = data; renderWifiList(); }
+}
+async function deleteWifiNet(id) {
+  const net = wifiNetList.find(x => x.id === id);
+  if (!confirm(`確定刪除「${net ? net.network_name : id}」？`)) return;
+  await api(`/api/punch/wifi-networks/${id}`, { method: 'DELETE' });
+  showToast('已刪除', 'success'); wifiNetList = wifiNetList.filter(x => x.id !== id); renderWifiList();
 }
 
 // ── LINE Punch Config ─────────────────────────────────────────

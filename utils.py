@@ -69,6 +69,14 @@ def loc_row(row):
     return d
 
 
+def wifi_network_row(row):
+    if not row: return None
+    d = dict(row)
+    if d.get('created_at'): d['created_at'] = d['created_at'].isoformat()
+    if d.get('updated_at'): d['updated_at'] = d['updated_at'].isoformat()
+    return d
+
+
 def punch_req_row(row):
     if not row: return None
     d = dict(row)

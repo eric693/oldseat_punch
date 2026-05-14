@@ -261,6 +261,15 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_punch_records_staff_punched ON punch_records(staff_id, punched_at)",
         "CREATE INDEX IF NOT EXISTS idx_shift_assignments_staff_date ON shift_assignments(staff_id, shift_date)",
         "CREATE INDEX IF NOT EXISTS idx_leave_requests_staff_status ON leave_requests(staff_id, status)",
+        "ALTER TABLE punch_config ADD COLUMN IF NOT EXISTS punch_mode TEXT DEFAULT 'gps'",
+        """CREATE TABLE IF NOT EXISTS punch_wifi_networks (
+            id           SERIAL PRIMARY KEY,
+            network_name TEXT NOT NULL DEFAULT 'WiFi地點',
+            allowed_ips  TEXT NOT NULL DEFAULT '',
+            active       BOOLEAN DEFAULT TRUE,
+            created_at   TIMESTAMPTZ DEFAULT NOW(),
+            updated_at   TIMESTAMPTZ DEFAULT NOW()
+        )""",
     ]
     for sql in migrations:
         try:

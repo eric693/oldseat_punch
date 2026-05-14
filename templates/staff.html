@@ -37,7 +37,7 @@ html,body{min-height:100%;background:var(--navy);font-family:"Noto Sans TC",sans
 .tab{flex:1;padding:13px 8px;text-align:center;font-family:"Noto Sans TC",sans-serif;font-size:13px;font-weight:600;color:rgba(255,255,255,.45);cursor:pointer;border:none;background:transparent;transition:all .15s;border-bottom:3px solid transparent}
 .tab.active{color:#fff;border-bottom-color:var(--gold)}
 .tab-body{padding:20px}
-.gps-bar{display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:16px}
+.gps-bar{display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:8px}
 .gps-ok{background:var(--green-light);color:var(--green)}
 .gps-warn{background:var(--orange-light);color:var(--orange)}
 .gps-err{background:var(--red-light);color:var(--red)}
@@ -200,6 +200,10 @@ html,body{min-height:100%;background:var(--navy);font-family:"Noto Sans TC",sans
         <div class="gps-bar gps-loading" id="gps-bar">
           <div class="gps-dot dot-spin" id="gps-dot"></div>
           <span id="gps-text">正在取得定位...</span>
+        </div>
+        <div class="gps-bar gps-loading" id="wifi-bar" style="display:none;margin-bottom:16px">
+          <div class="gps-dot dot-spin" id="wifi-dot"></div>
+          <span id="wifi-text">正在確認 WiFi...</span>
         </div>
         <div class="punch-grid">
           <button class="punch-btn p-in"   id="btn-in"   onclick="doPunch('in')">上班打卡<div class="p-sub">Clock In</div></button>
@@ -526,7 +530,7 @@ const PLCLS={in:'lb-in',out:'lb-out',break_out:'lb-bout',break_in:'lb-bin'};
 const SLABEL={pending:'審核中',approved:'已核准',rejected:'已退回',modified_pending:'修改待審'};
 const SCLS={pending:'sb-pending',approved:'sb-approved',rejected:'sb-rejected',modified_pending:'sb-modified'};
 
-let me=null,gpsSettings=null,gpsPos=null,gpsWatchId=null,punchLocked=false;
+let me=null,gpsSettings=null,gpsPos=null,gpsWatchId=null,punchLocked=false,wifiOk=false;
 let curSchedMonth=null,schedCfg=null,schedOffCounts={},schedSelectedDates=new Set(),schedExistingReq=null;
 
 function tick(){
@@ -565,7 +569,7 @@ async function doLogin(){
 }
 async function doLogout(){
   await fetch('/api/punch/logout',{method:'POST'});
-  me=null;gpsPos=null;
+  me=null;gpsPos=null;wifiOk=false;
   if(gpsWatchId)navigator.geolocation.clearWatch(gpsWatchId);
   showLogin();
 }
@@ -582,7 +586,7 @@ function switchTab(tab){
     document.getElementById('panel-'+t).style.display=t===tab?'':'none';
   });
   if(tab==='ann')initAnnStaff();
-  if(tab==='punch'){startGPS();loadTodayLog();}
+  if(tab==='punch'){startPunchVerify();loadTodayLog();}
   if(tab==='sched')initSchedTab();
   if(tab==='leave')initLeaveTab();
   if(tab==='schedule-view')initScheduleViewTab();
@@ -594,26 +598,36 @@ function switchTab(tab){
   if(tab==='biodev')initBiodevTab();
 }
 
-/* GPS */
+/* 打卡驗證 */
+function startPunchVerify(){
+  const mode=(gpsSettings&&gpsSettings.punch_mode)||'gps';
+  const useGps=mode==='gps'||mode==='either';
+  const useWifi=mode==='wifi'||mode==='either';
+  document.getElementById('gps-bar').style.display=useGps?'':'none';
+  document.getElementById('wifi-bar').style.display=useWifi?'':'none';
+  if(mode==='none'){setBtns(false);return;}
+  if(useGps)startGPS();
+  if(useWifi)checkWifi();
+}
 function startGPS(){
   setGpsBar('loading','正在取得定位...');
-  if(!navigator.geolocation){setGpsBar('err','裝置不支援 GPS');return;}
+  if(!navigator.geolocation){setGpsBar('err','裝置不支援 GPS');evalPunchBlock();return;}
   navigator.geolocation.getCurrentPosition(gpsOk,gpsErr,{timeout:12000,enableHighAccuracy:true});
   gpsWatchId=navigator.geolocation.watchPosition(gpsOk,gpsErr,{enableHighAccuracy:true,maximumAge:15000,timeout:15000});
 }
 function gpsOk(pos){
   gpsPos={lat:pos.coords.latitude,lng:pos.coords.longitude};
   const locs=(gpsSettings&&gpsSettings.locations)||[];
-  const req=gpsSettings&&gpsSettings.gps_required;
-  if(!locs.length){setGpsBar('ok','定位成功');setBtns(false);return;}
+  if(!locs.length){setGpsBar('ok','定位成功');evalPunchBlock();return;}
   let minDist=null,minLoc=null;
   locs.forEach(loc=>{const d=hav(gpsPos.lat,gpsPos.lng,loc.lat,loc.lng);if(minDist===null||d<minDist){minDist=d;minLoc=loc;}});
-  if(minDist<=minLoc.radius_m){setGpsBar('ok','「'+minLoc.location_name+'」範圍內（'+minDist+'m）');setBtns(false);}
-  else{setGpsBar('warn','距「'+minLoc.location_name+'」'+minDist+'m，超出範圍');setBtns(req,'超出打卡範圍');}
+  if(minDist<=minLoc.radius_m){setGpsBar('ok','「'+minLoc.location_name+'」範圍內（'+minDist+'m）');}
+  else{setGpsBar('warn','距「'+minLoc.location_name+'」'+minDist+'m，超出範圍');}
+  evalPunchBlock();
 }
 function gpsErr(){
-  if(gpsSettings&&gpsSettings.gps_required){setGpsBar('err','無法取得定位，請允許位置權限');setBtns(true,'需要定位權限');}
-  else{setGpsBar('warn','未取得定位（非必要）');setBtns(false);}
+  setGpsBar('err','無法取得定位，請允許位置權限');
+  evalPunchBlock();
 }
 function setGpsBar(type,msg){
   const tmap={ok:'gps-ok',warn:'gps-warn',err:'gps-err',loading:'gps-loading'};
@@ -622,9 +636,53 @@ function setGpsBar(type,msg){
   document.getElementById('gps-dot').className='gps-dot '+(dmap[type]||'dot-spin');
   document.getElementById('gps-text').textContent=msg;
 }
+async function checkWifi(){
+  setWifiBar('loading','正在確認 WiFi...');
+  try{
+    const r=await fetch('/api/punch/wifi-check');
+    const d=await r.json();
+    wifiOk=!!d.ok;
+    if(d.ok){setWifiBar('ok','WiFi 已連線：'+d.network_name);}
+    else{setWifiBar('err','非允許的 WiFi 網路（IP: '+d.ip+'）');}
+  }catch(e){wifiOk=false;setWifiBar('err','WiFi 確認失敗');}
+  evalPunchBlock();
+}
+function setWifiBar(type,msg){
+  const tmap={ok:'gps-ok',warn:'gps-warn',err:'gps-err',loading:'gps-loading'};
+  const dmap={ok:'dot-ok',warn:'dot-warn',err:'dot-err',loading:'dot-spin'};
+  document.getElementById('wifi-bar').className='gps-bar '+(tmap[type]||'gps-loading');
+  document.getElementById('wifi-dot').className='gps-dot '+(dmap[type]||'dot-spin');
+  document.getElementById('wifi-text').textContent=msg;
+}
+function evalPunchBlock(){
+  const mode=(gpsSettings&&gpsSettings.punch_mode)||'gps';
+  if(mode==='none'){setBtns(false);return;}
+  if(mode==='gps'){
+    const locs=(gpsSettings&&gpsSettings.locations)||[];
+    const req=!!(gpsSettings&&gpsSettings.gps_required);
+    if(!req){setBtns(false);return;}
+    if(!gpsPos){setBtns(true,'無法取得 GPS');return;}
+    if(!locs.length){setBtns(false);return;}
+    let minDist=null,minLoc=null;
+    locs.forEach(loc=>{const d=hav(gpsPos.lat,gpsPos.lng,loc.lat,loc.lng);if(minDist===null||d<minDist){minDist=d;minLoc=loc;}});
+    setBtns(minDist>minLoc.radius_m,'超出打卡範圍');return;
+  }
+  if(mode==='wifi'){setBtns(!wifiOk,'請連接辦公室 WiFi');return;}
+  if(mode==='either'){
+    const locs=(gpsSettings&&gpsSettings.locations)||[];
+    let gpsPass=false;
+    if(gpsPos&&locs.length){
+      let minDist=null,minLoc=null;
+      locs.forEach(loc=>{const d=hav(gpsPos.lat,gpsPos.lng,loc.lat,loc.lng);if(minDist===null||d<minDist){minDist=d;minLoc=loc;}});
+      gpsPass=minDist<=minLoc.radius_m;
+    }else if(gpsPos&&!locs.length){gpsPass=true;}
+    setBtns(!gpsPass&&!wifiOk,'請在 GPS 範圍內或連接辦公室 WiFi');return;
+  }
+  setBtns(false);
+}
 function setBtns(disabled,title=''){
   ['btn-in','btn-out','btn-bout','btn-bin'].forEach(id=>{
-    const b=document.getElementById(id);b.disabled=disabled;if(disabled&&title)b.title=title;
+    const b=document.getElementById(id);b.disabled=disabled;if(title)b.title=disabled?title:'';
   });
 }
 function hav(a,b,c,d){
@@ -644,7 +702,10 @@ async function doPunch(type){
     if(!r.ok){showToast(d.error||'打卡失敗','err');punchLocked=false;return;}
     const n=new Date();
     const ts=[n.getHours(),n.getMinutes()].map(x=>String(x).padStart(2,'0')).join(':');
-    showSuccess(me.name,PLABEL[type],ts,d.gps_distance!=null?'距離打卡地點 '+d.gps_distance+' 公尺':'');
+    let locHint='';
+    if(d.wifi_network)locHint='WiFi：'+d.wifi_network;
+    else if(d.gps_distance!=null)locHint='距離打卡地點 '+d.gps_distance+' 公尺';
+    showSuccess(me.name,PLABEL[type],ts,locHint);
     await loadTodayLog();
   }catch(e){showToast('網路錯誤，請重試','err');punchLocked=false;}
 }
