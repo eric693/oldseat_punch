@@ -2159,8 +2159,18 @@ tbody td.date-cell { font-family: 'Noto Sans TC', sans-serif; font-weight: 500; 
         <select class="form-input" id="wnm-active"><option value="1">啟用</option><option value="0">停用</option></select>
       </div>
       <div style="padding:10px 12px;background:var(--bg);border-radius:6px;font-size:12px;color:var(--muted)">
-        目前連線 IP：<span id="wnm-current-ip" style="font-family:'DM Mono',monospace;color:var(--accent)">載入中...</span>
-        <button class="btn btn-outline btn-sm" style="margin-left:8px;padding:2px 8px;font-size:11px" onclick="fillCurrentIP()">填入</button>
+        <div style="margin-bottom:6px;font-weight:600;color:var(--text)">偵測目前 IP</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+          <span style="width:120px">WiFi 本機 IP：</span>
+          <span id="wnm-local-ip" style="font-family:'DM Mono',monospace;color:var(--accent)">偵測中...</span>
+          <button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px" onclick="fillLocalIP()">填入</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="width:120px">對外 IP：</span>
+          <span id="wnm-current-ip" style="font-family:'DM Mono',monospace;color:var(--muted)">載入中...</span>
+          <button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px" onclick="fillCurrentIP()">填入</button>
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:var(--muted)">WiFi 本機 IP 適合內網伺服器；對外 IP 適合外網伺服器</div>
       </div>
     </div>
     <div class="modal-footer"><button class="btn btn-outline" onclick="closeWifiModal()">取消</button><button class="btn btn-primary" onclick="saveWifiNetwork()">儲存</button></div>
@@ -4346,6 +4356,24 @@ async function deleteLocation(id) {
 }
 
 // ── WiFi Networks ────────────────────────────────────────────
+async function getLocalIPs() {
+  return new Promise(resolve => {
+    const ips = [];
+    let pc;
+    try {
+      pc = new RTCPeerConnection({ iceServers: [] });
+      pc.createDataChannel('');
+      pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => resolve([]));
+      const timer = setTimeout(() => { try { pc.close(); } catch(e){} resolve(ips); }, 2000);
+      pc.onicecandidate = e => {
+        if (!e || !e.candidate) { clearTimeout(timer); try { pc.close(); } catch(e){} resolve(ips); return; }
+        const m = e.candidate.candidate.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
+        if (m && !ips.includes(m[1]) && !m[1].startsWith('0.')) ips.push(m[1]);
+      };
+    } catch(e) { resolve([]); }
+  });
+}
+
 async function openWifiModal(id=null) {
   editingWifiId = id;
   document.getElementById('wnm-title').textContent = id ? '編輯 WiFi 網路' : '新增 WiFi 網路';
@@ -4359,14 +4387,35 @@ async function openWifiModal(id=null) {
     ['wnm-id','wnm-name','wnm-ips'].forEach(i => document.getElementById(i).value = '');
     document.getElementById('wnm-active').value = '1';
   }
-  // Load current IP
-  const { ok, data } = await api('/api/punch/wifi-check', {}, true);
-  document.getElementById('wnm-current-ip').textContent = ok !== undefined ? data.ip || '未知' : '未知';
   document.getElementById('wifi-net-modal').style.display = 'flex';
+  // 同時偵測本機 IP（WebRTC）與對外 IP（server）
+  document.getElementById('wnm-local-ip').textContent = '偵測中...';
+  document.getElementById('wnm-current-ip').textContent = '載入中...';
+  const [localIPs, checkRes] = await Promise.all([
+    getLocalIPs(),
+    api('/api/punch/wifi-check', {}, true),
+  ]);
+  const privateIPs = localIPs.filter(ip =>
+    ip.startsWith('192.168.') || ip.startsWith('10.') ||
+    ip.match(/^172\.(1[6-9]|2\d|3[01])\./)
+  );
+  document.getElementById('wnm-local-ip').textContent =
+    privateIPs.length ? privateIPs.join(', ') : '無法偵測（請改用對外 IP）';
+  document.getElementById('wnm-current-ip').textContent =
+    checkRes.ok !== undefined ? checkRes.data.ip || '未知' : '未知';
 }
 function closeWifiModal() { document.getElementById('wifi-net-modal').style.display = 'none'; }
+function fillLocalIP() {
+  const ip = document.getElementById('wnm-local-ip').textContent;
+  if (ip.includes('無法')) return;
+  // 把本機 IP 轉成 /24 子網段
+  const subnet = ip.split(',')[0].trim().replace(/\.\d+$/, '.0/24');
+  const cur = document.getElementById('wnm-ips').value.trim();
+  document.getElementById('wnm-ips').value = cur ? cur + ', ' + subnet : subnet;
+}
 function fillCurrentIP() {
   const ip = document.getElementById('wnm-current-ip').textContent;
+  if (ip === '未知' || ip === '載入中...') return;
   const cur = document.getElementById('wnm-ips').value.trim();
   document.getElementById('wnm-ips').value = cur ? cur + ', ' + ip : ip;
 }
